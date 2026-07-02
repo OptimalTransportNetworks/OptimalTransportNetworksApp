@@ -1,0 +1,301 @@
+/* Optimal Transport Networks app layout */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#otn-shell {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+#otn-sidebar {
+  width: 360px;
+  min-width: 360px;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid #ddd;
+  background: #fafafa;
+  padding: 14px 16px 24px 16px;
+  box-sizing: border-box;
+}
+
+.app-title {
+  margin: 0 0 2px 0;
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+.app-subtitle {
+  margin: 0 0 10px 0;
+  font-size: 0.78rem;
+  color: #777;
+}
+
+.section-title {
+  margin: 18px 0 8px 0;
+  font-size: 0.95rem;
+  color: #333;
+  border-bottom: 1px solid #e5e5e5;
+  padding-bottom: 3px;
+}
+
+.upload-box {
+  width: 100%;
+  margin-bottom: 8px;
+  max-height: 110px;
+}
+
+.example-btn {
+  margin: 2px 0 8px 0;
+}
+
+.net-summary {
+  font-size: 0.85rem;
+  color: #2e7d32;
+  margin: 4px 0;
+  font-weight: 600;
+}
+
+.warnings-text {
+  font-size: 0.78rem;
+  color: #b26a00;
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+
+.param-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  margin-bottom: 10px;
+}
+
+.budget-text {
+  font-size: 0.76rem;
+  color: #666;
+  margin: 4px 0 0 0;
+}
+
+.run-btn {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.status-line {
+  font-size: 0.8rem;
+  color: #444;
+  margin: 8px 0 0 0;
+  min-height: 1.2em;
+}
+
+.results-box {
+  margin-top: 12px;
+  padding: 10px;
+  background: #eef4ee;
+  border: 1px solid #cfe3cf;
+  border-radius: 6px;
+}
+
+.results-text {
+  font-size: 0.85rem;
+  margin: 0 0 8px 0;
+  color: #1b5e20;
+}
+
+.dl-link {
+  display: block;
+  font-size: 0.82rem;
+  margin: 2px 0;
+  color: #1565c0;
+}
+
+/* ---------------------------------------------------------------- main */
+
+#otn-main {
+  flex: 1;
+  position: relative;
+  height: 100vh;
+}
+
+#map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Output selector card */
+#output-card {
+  position: absolute;
+  top: 10px;
+  left: 54px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
+  font-size: 0.8rem;
+  max-width: 380px;
+}
+
+.output-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+}
+
+.output-row label {
+  width: 42px;
+  color: #555;
+  font-weight: 600;
+}
+
+.output-row select {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  max-width: 320px;
+}
+
+#map-summary {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #333;
+  font-weight: 600;
+}
+
+/* Legend */
+#legend {
+  position: absolute;
+  bottom: 26px;
+  right: 10px;
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.25);
+  width: 220px;
+}
+
+.legend-block { margin-bottom: 6px; }
+.legend-block:last-child { margin-bottom: 0; }
+
+.legend-label {
+  font-size: 0.72rem;
+  color: #333;
+  margin-bottom: 3px;
+}
+
+.legend-bar {
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid #bbb;
+}
+
+.legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: #555;
+}
+
+/* Console */
+#console-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 34%;
+  min-height: 140px;
+  z-index: 1100;
+  background: #101418;
+  color: #d6e2ea;
+  display: flex;
+  flex-direction: column;
+  border-top: 2px solid #2c3e50;
+}
+
+#console-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  background: #1a222b;
+  font-size: 0.78rem;
+}
+
+.console-title { font-weight: 700; }
+
+#console-status {
+  color: #7fd0ff;
+  font-style: italic;
+}
+
+#console-header button {
+  background: #2c3a47;
+  color: #cfd8e0;
+  border: none;
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+#console-header button:hover { background: #3d5163; }
+
+#console-body {
+  flex: 1;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px 10px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+#console-reopen {
+  position: absolute;
+  bottom: 26px;
+  left: 10px;
+  z-index: 1000;
+  background: #1a222b;
+  color: #d6e2ea;
+  border: 1px solid #3d5163;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.hidden { display: none !important; }
+
+/* Popups */
+.otn-popup table {
+  border-collapse: collapse;
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+.otn-popup td {
+  padding: 1px 8px 1px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.otn-popup td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Quasar tweaks inside the sidebar */
+#otn-sidebar .q-field { margin-bottom: 2px; }
+#otn-sidebar .q-uploader { width: 100%; }
+#otn-sidebar .q-uploader__list { max-height: 42px; }
+#otn-sidebar .q-expansion-item { margin-top: 6px; background: #f2f2f2; border-radius: 6px; }
+#otn-sidebar .q-toggle { display: flex; }

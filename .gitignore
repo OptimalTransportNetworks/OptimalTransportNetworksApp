@@ -1,0 +1,4 @@
+public/downloads/
+uploads/
+*.log
+.DS_Store
