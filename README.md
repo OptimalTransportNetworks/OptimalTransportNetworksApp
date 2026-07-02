@@ -6,8 +6,10 @@ transport network simulations with
 (Fajgelbaum & Schaal, 2020, *Econometrica*) on user-supplied networks, with
 interactive map visualization of the results.
 
-![Layout: sidebar with upload fields, parameters and Run button; map panel with
-basemap switcher, output selectors, legend and a solver console.](docs/screenshot.png)
+Layout: dark collapsible sidebar (uploads, parameters, Run button, results) on
+the left; map panel with a basemap dropdown, layer/output controls, translucent
+legends, and a solver console on the right. ⓘ icons and the **Guide** button
+explain every field without cluttering the UI.
 
 ## Quick start
 
@@ -55,8 +57,18 @@ One row per undirected edge:
 | `Iu`        | optional | upper bound on `I` (default: unbounded); also the cap in the percent-upgraded output |
 | `geometry`  | optional | WKT `LINESTRING (lon lat, lon lat, ...)` used to draw the edge on the map |
 
-The bundled example (`data/example/`, regenerate with
-`julia data/example/generate_example.jl`) shows all conventions.
+Two datasets are bundled:
+
+- `data/example/` — a small synthetic 30-node network (**Load example**);
+  regenerate with `julia data/example/generate_example.jl`.
+- `data/CEMAC/` — the **real CEMAC road network** from the OptimalCEMACRoads
+  study (196 city nodes, 313 edges, 20 goods; existing network only, no
+  hypothetical links): infrastructure = average speed in km/h, upgrade costs per
+  km/h up to a 90 km/h cap, and Graff (2024) iceberg trade costs.
+  **Load CEMAC network** also applies the study's calibration (alpha 0.7,
+  gamma 1.2, sigma 3.8, a 1, rho 2, cross-good congestion, duality). Regenerate
+  with `julia --project=. data/CEMAC/generate_cemac.jl` (requires the
+  OptimalCEMACRoads data locally).
 
 ## Budget semantics
 

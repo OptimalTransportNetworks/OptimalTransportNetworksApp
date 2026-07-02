@@ -25,19 +25,32 @@ model.isready[] = true # fires the isready handler -> registers MODEL_REF
 
 @check MODEL_REF[] === model "model registered on isready"
 
+# --- Load CEMAC network (button): load + calibration only, no solve (see
+# test/cemac_solve_test.jl for the research-scale solve) -------------------------
+model.load_cemac[] = true
+sleep(0.5)
+@check model.has_network[] "CEMAC network loaded via button handler"
+@check model.K[] > 0 "budget K prefilled ($(model.K[]))"
+@check occursin("196 nodes", model.net_summary[]) "CEMAC summary pushed ($(model.net_summary[]))"
+@check model.alpha[] == 0.7 && model.sigma[] == 3.8 && model.cross_good_congestion[] "CEMAC calibration applied on load"
+
 # --- Load example network (button) -------------------------------------------
 model.load_example[] = true
 sleep(0.5)
 @check model.has_network[] "example network loaded via button handler"
-@check model.K[] > 0 "budget K prefilled ($(model.K[]))"
-@check occursin("30 nodes", model.net_summary[]) "network summary pushed ($(model.net_summary[]))"
+@check occursin("30 nodes", model.net_summary[]) "example summary pushed ($(model.net_summary[]))"
 @check STATE.network_valid "STATE marked valid"
 
-# --- Run optimization (button) ------------------------------------------------
+# --- Run optimization (button) on the small synthetic network ------------------
+model.alpha[] = 0.5
+model.gamma[] = 1.0
+model.sigma[] = 5.0
+model.a[] = 0.8
+model.cross_good_congestion[] = false
+model.annealing[] = false
 model.min_iter[] = 3
 model.max_iter[] = 12
 model.tol[] = 1e-4
-model.annealing[] = false
 
 model.run[] = true
 sleep(1.0)

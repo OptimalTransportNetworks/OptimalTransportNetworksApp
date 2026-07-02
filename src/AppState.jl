@@ -6,6 +6,8 @@ const EdgeGeometry = Union{Nothing, Vector{Tuple{Float64, Float64}}}
 Base.@kwdef mutable struct AppData
     nodes::Union{DataFrame, Nothing} = nothing
     edges::Union{DataFrame, Nothing} = nothing
+    nodes_filename::String = ""
+    edges_filename::String = ""
     geometries::Vector{EdgeGeometry} = EdgeGeometry[]
     warnings::Vector{String} = String[]
     network_valid::Bool = false

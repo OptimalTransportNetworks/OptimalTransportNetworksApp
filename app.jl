@@ -30,21 +30,23 @@ include(joinpath(APP_ROOT, "src", "Outputs.jl"))
 
 const MODEL_REF = Ref{Any}(nothing) # latest connected reactive model (single-user tool)
 
-function apply_nodes!(data::Vector{UInt8})
+function apply_nodes!(data::Vector{UInt8}, filename::String)
     df, errors, warnings = parse_nodes(data)
     df === nothing && return errors
     lock(STATE_LOCK) do
         STATE.nodes = df
+        STATE.nodes_filename = filename
     end
     return warnings
 end
 
-function apply_edges!(data::Vector{UInt8})
+function apply_edges!(data::Vector{UInt8}, filename::String)
     df, geoms, errors, warnings = parse_edges(data)
     df === nothing && return errors
     lock(STATE_LOCK) do
         STATE.edges = df
         STATE.geometries = geoms
+        STATE.edges_filename = filename
     end
     return warnings
 end
@@ -80,6 +82,12 @@ function sync_model!(m)
     m.has_results[] = STATE.results !== nothing
     m.running[] = STATE.running
     m.warnings_text[] = join(STATE.warnings, " • ")
+    m.nodes_loaded[] = STATE.nodes !== nothing
+    m.edges_loaded[] = STATE.edges !== nothing
+    m.nodes_file_text[] = STATE.nodes === nothing ? "" : "✓ " * STATE.nodes_filename
+    m.nodes_file_sub[] = STATE.nodes === nothing ? "" : "$(nrow(STATE.nodes)) nodes"
+    m.edges_file_text[] = STATE.edges === nothing ? "" : "✓ " * STATE.edges_filename
+    m.edges_file_sub[] = STATE.edges === nothing ? "" : "$(nrow(STATE.edges)) edges"
     if STATE.network_valid
         m.net_summary[] = "Loaded: " * network_summary(STATE.nodes, STATE.edges)
         bs = budget_stats(STATE.edges)
@@ -92,19 +100,41 @@ function sync_model!(m)
     return
 end
 
+"Clear one uploaded file (kind = :nodes or :edges) and refresh."
+function clear_file!(m, kind::Symbol)
+    lock(STATE_LOCK) do
+        if kind == :nodes
+            STATE.nodes = nothing
+            STATE.nodes_filename = ""
+        else
+            STATE.edges = nothing
+            STATE.edges_filename = ""
+            STATE.geometries = EdgeGeometry[]
+        end
+    end
+    refresh_network!(String[])
+    sync_model!(m)
+    return
+end
+
 "Prefill K with the existing-network cost + 20% new investment (K = K₀ with no downgrading changes nothing)."
 function prefill_budget!(m)
     (m === nothing || !STATE.network_valid) && return
     bs = budget_stats(STATE.edges)
-    m.K[] = round(bs.K_base * 1.2, sigdigits = 4)
+    K = bs.K_base * 1.2
+    # keep the prefill feasible when upper bounds cap the buildable network
+    isnan(bs.K_max) || (K = min(K, bs.K_base + 0.5 * (bs.K_max - bs.K_base)))
+    m.K[] = round(K, sigdigits = 4)
     return
 end
 
 function handle_upload(kind::Symbol)
     fp = Genie.Requests.filespayload()
     isempty(fp) && return Genie.Renderer.respond("No file received", "text/plain", 400)
-    data = Vector{UInt8}(first(values(fp)).data)
-    msgs = kind == :nodes ? apply_nodes!(data) : apply_edges!(data)
+    file = first(values(fp))
+    data = Vector{UInt8}(file.data)
+    fname = isempty(file.name) ? string(kind, ".csv") : file.name
+    msgs = kind == :nodes ? apply_nodes!(data, fname) : apply_edges!(data, fname)
     valid = refresh_network!(msgs)
     m = MODEL_REF[]
     sync_model!(m)
@@ -115,14 +145,34 @@ function handle_upload(kind::Symbol)
     return Genie.Renderer.respond(JSON3.write(Dict("ok" => true, "messages" => msgs)), "application/json")
 end
 
-function load_example!()
-    nodes_path = joinpath(APP_ROOT, "data", "example", "nodes.csv")
-    edges_path = joinpath(APP_ROOT, "data", "example", "edges.csv")
-    (isfile(nodes_path) && isfile(edges_path)) || return "Example data not found under data/example/."
-    msgs = apply_nodes!(read(nodes_path))
-    append!(msgs, apply_edges!(read(edges_path)))
+"Load a bundled dataset from data/<dir>; returns (success, message)."
+function load_dataset!(dir::String, label::String)
+    nodes_path = joinpath(APP_ROOT, "data", dir, "nodes.csv")
+    edges_path = joinpath(APP_ROOT, "data", dir, "edges.csv")
+    (isfile(nodes_path) && isfile(edges_path)) || return false, "Dataset not found under data/$dir/."
+    msgs = apply_nodes!(read(nodes_path), "nodes.csv ($label)")
+    append!(msgs, apply_edges!(read(edges_path), "edges.csv ($label)"))
     valid = refresh_network!(msgs)
-    return valid ? "Example network loaded — ready to run." : "Example network failed validation."
+    return valid, valid ? "$label network loaded — ready to run." : "$label network failed validation."
+end
+
+"Parameter calibration of the CEMAC study (optimal_trans_african_networks_..._CR_duality.jl)."
+function set_cemac_calibration!(m)
+    m.alpha[] = 0.7
+    m.beta[] = 1.0
+    m.gamma[] = 1.2 # IRS case of the study; > beta, solved without annealing there
+    m.rho[] = 2.0
+    m.sigma[] = 3.8 # Armington
+    m.a[] = 1.0
+    m.nu[] = 2.0
+    m.cross_good_congestion[] = true
+    m.annealing[] = false
+    m.duality[] = true
+    m.tol[] = 1.0e-5
+    m.min_iter[] = 15
+    m.max_iter[] = 45
+    m.productivity_floor[] = true # study floors the whole Zjn matrix at 1e-3
+    return
 end
 
 # ---------------------------------------------------------------------------
@@ -140,7 +190,9 @@ function params_from_model(m)
             annealing = m.annealing[], duality = m.duality[],
             compute_baseline = m.compute_baseline[],
             solver_verbose = m.solver_verbose[],
-            allow_downgrade = m.allow_downgrade[])
+            allow_downgrade = m.allow_downgrade[],
+            productivity_floor = m.productivity_floor[],
+            linear_solver = m.linear_solver[])
 end
 
 @app begin
@@ -165,9 +217,14 @@ end
     @in compute_baseline = true
     @in solver_verbose = false
     @in allow_downgrade = false
+    @in productivity_floor = false
+    @in linear_solver = "mumps"
     # actions
     @in run = false
     @in load_example = false
+    @in load_cemac = false
+    @in clear_nodes = false
+    @in clear_edges = false
     # status
     @out running = false
     @out has_network = false
@@ -177,18 +234,53 @@ end
     @out budget_text = ""
     @out warnings_text = ""
     @out results_text = ""
+    # upload display state
+    @out nodes_loaded = false
+    @out edges_loaded = false
+    @out nodes_file_text = ""
+    @out nodes_file_sub = ""
+    @out edges_file_text = ""
+    @out edges_file_sub = ""
 
     @onchange isready begin
         MODEL_REF[] = __model__
         sync_model!(__model__)
+        # network loaded before this client connected and K untouched -> anchor it
+        if STATE.network_valid && K == 1.0
+            prefill_budget!(__model__)
+        end
     end
 
     @onbutton load_example begin
         MODEL_REF[] = __model__
-        msg = load_example!()
+        _, msg = load_dataset!("example", "example")
         sync_model!(__model__)
         prefill_budget!(__model__)
         status_text = msg
+    end
+
+    @onbutton load_cemac begin
+        MODEL_REF[] = __model__
+        ok, msg = load_dataset!("CEMAC", "CEMAC")
+        sync_model!(__model__)
+        prefill_budget!(__model__)
+        if ok
+            set_cemac_calibration!(__model__)
+            msg = "CEMAC network loaded with the study's calibration — ready to run."
+        end
+        status_text = msg
+    end
+
+    @onbutton clear_nodes begin
+        MODEL_REF[] = __model__
+        clear_file!(__model__, :nodes)
+        status_text = "Nodes cleared."
+    end
+
+    @onbutton clear_edges begin
+        MODEL_REF[] = __model__
+        clear_file!(__model__, :edges)
+        status_text = "Edges cleared."
     end
 
     @onbutton run begin
@@ -224,67 +316,104 @@ end
 end
 
 # ---------------------------------------------------------------------------
-# UI (sidebar content; the map and console live in the layout, outside Vue)
+# UI (sidebar content; the map, console and modals live in the layout, outside Vue)
+
+# Small ⓘ button; map.js opens the matching modal via a delegated click handler.
+info_icon(key::String) = Html.span("", class = "info-icon", data__info = key,
+                                   role = "button", title = "More info")
+
+field_row(label::String, key::String) =
+    Html.div(class = "field-row", [Html.span(label, class = "field-label"), info_icon(key)])
 
 function ui()
     [
         h4("Transport Network Optimizer", class = "app-title")
-        p("Optimal transport networks in spatial equilibrium — Fajgelbaum & Schaal (2020)", class = "app-subtitle")
+        Html.div(class = "subtitle-row", [
+            p("Optimal transport networks in spatial equilibrium — Fajgelbaum & Schaal (2020)",
+              class = "app-subtitle")
+            info_icon("guide")
+        ])
 
-        h6("1 · Network", class = "section-title")
-        uploader(label = "Nodes CSV — node, lon, lat, population, productivity, housing",
-                 url = "/api/upload/nodes", method = "POST", auto__upload = true, accept = ".csv",
-                 max__files = 1, dense = true, flat = true, bordered = true, class = "upload-box")
-        uploader(label = "Edges CSV — from, to, delta_i, delta_tau, Ijk, Il, Iu, geometry",
-                 url = "/api/upload/edges", method = "POST", auto__upload = true, accept = ".csv",
-                 max__files = 1, dense = true, flat = true, bordered = true, class = "upload-box")
-        btn("Load example network", @click(:load_example), size = "sm", color = "secondary",
-            outline = true, nocaps = true, class = "example-btn")
+        field_row("Upload Nodes CSV", "nodes-csv")
+        Html.div(class = "upload-field", [
+            Html.div(v__if = "!nodes_loaded", [
+                Html.input(type = "file", id = "nodes-file", accept = ".csv", class = "file-input")
+            ])
+            Html.div(@iif(:nodes_loaded), class = "upload-loaded", [
+                Html.div(class = "upload-meta", [
+                    p(@text(:nodes_file_text), class = "upload-name")
+                    p(@text(:nodes_file_sub), class = "upload-sub")
+                ])
+                btn("Clear", @click(:clear_nodes), size = "sm", flat = true, nocaps = true,
+                    class = "clear-btn")
+            ])
+        ])
+        field_row("Upload Edges CSV", "edges-csv")
+        Html.div(class = "upload-field", [
+            Html.div(v__if = "!edges_loaded", [
+                Html.input(type = "file", id = "edges-file", accept = ".csv", class = "file-input")
+            ])
+            Html.div(@iif(:edges_loaded), class = "upload-loaded", [
+                Html.div(class = "upload-meta", [
+                    p(@text(:edges_file_text), class = "upload-name")
+                    p(@text(:edges_file_sub), class = "upload-sub")
+                ])
+                btn("Clear", @click(:clear_edges), size = "sm", flat = true, nocaps = true,
+                    class = "clear-btn")
+            ])
+        ])
+        Html.div(class = "btn-row", [
+            btn("Load example", @click(:load_example), size = "sm", flat = true, nocaps = true,
+                class = "ghost-btn", title = "Small synthetic 30-node network")
+            btn("Load CEMAC network", @click(:load_cemac), size = "sm", flat = true, nocaps = true,
+                class = "ghost-btn", title = "Real CEMAC road network (196 cities, 20 goods) with the study's calibration")
+        ])
         p(@text(:net_summary), class = "net-summary", @iif(:net_summary))
         p(@text(:warnings_text), class = "warnings-text", @iif(:warnings_text))
 
-        h6("2 · Model parameters", class = "section-title")
+        Html.hr(class = "sep")
+
+        field_row("Model Parameters", "params")
         Html.div(class = "param-grid", [
-            numberfield("alpha", :alpha, dense = true, outlined = true, step = "0.05",
-                        title = "Cobb-Douglas share of traded goods in utility")
-            numberfield("beta", :beta, dense = true, outlined = true, step = "0.1",
-                        title = "Congestion elasticity in transport costs")
-            numberfield("gamma", :gamma, dense = true, outlined = true, step = "0.1",
-                        title = "Elasticity of transport cost w.r.t. infrastructure")
-            numberfield("rho", :rho, dense = true, outlined = true, step = "0.5",
-                        title = "Curvature of utility (inequality aversion; 0 = utilitarian)")
+            numberfield("alpha", :alpha, dense = true, outlined = true, dark = true, step = "0.05")
+            numberfield("beta", :beta, dense = true, outlined = true, dark = true, step = "0.1")
+            numberfield("gamma", :gamma, dense = true, outlined = true, dark = true, step = "0.1")
+            numberfield("rho", :rho, dense = true, outlined = true, dark = true, step = "0.5")
         ])
-        numberfield("K — infrastructure budget (delta_i cost units)", :K, dense = true, outlined = true,
-                    title = "Total budget in the same units as delta_i × infrastructure. Prefilled with the cost of the existing network.")
+
+        field_row("Infrastructure Budget (K)", "budget")
+        numberfield("", :K, dense = true, outlined = true, dark = true)
         p(@text(:budget_text), class = "budget-text", @iif(:budget_text))
 
-        h6("3 · Solver", class = "section-title")
+        field_row("Solver Controls", "solver")
         Html.div(class = "param-grid", [
-            numberfield("tol", :tol, dense = true, outlined = true,
-                        title = "Convergence tolerance for the network fixed point")
-            numberfield("min_iter", :min_iter, dense = true, outlined = true, step = "1",
-                        title = "Minimum outer iterations")
-            numberfield("max_iter", :max_iter, dense = true, outlined = true, step = "1",
-                        title = "Maximum outer iterations")
+            numberfield("tol", :tol, dense = true, outlined = true, dark = true)
+            numberfield("min_iter", :min_iter, dense = true, outlined = true, dark = true, step = "1")
+            numberfield("max_iter", :max_iter, dense = true, outlined = true, dark = true, step = "1")
         ])
 
-        expansionitem(label = "Advanced options", dense = true, dense__toggle = true,
-                      header__class = "advanced-header", [
-            Html.div(class = "param-grid", [
-                numberfield("sigma", :sigma, dense = true, outlined = true, step = "0.5",
-                            title = "Elasticity of substitution across goods")
-                numberfield("a", :a, dense = true, outlined = true, step = "0.05",
-                            title = "Labor curvature in production Z L^a (must be ≤ 1)")
-                numberfield("nu", :nu, dense = true, outlined = true, step = "0.5",
-                            title = "Congestion substitution elasticity (cross-good congestion only)")
+        expansionitem(label = "Advanced options", dense = true, dense__toggle = true, dark = true,
+                      class = "advanced", header__class = "advanced-header", [
+            Html.div(class = "adv-inner", [
+                Html.div(class = "param-grid", [
+                    numberfield("sigma", :sigma, dense = true, outlined = true, dark = true, step = "0.5")
+                    numberfield("a", :a, dense = true, outlined = true, dark = true, step = "0.05")
+                    numberfield("nu", :nu, dense = true, outlined = true, dark = true, step = "0.5")
+                ])
+                toggle("Labor mobility", :labor_mobility, dense = true, dark = true, size = "sm")
+                toggle("Cross-good congestion", :cross_good_congestion, dense = true, dark = true, size = "sm")
+                toggle("Simulated annealing (only if gamma > beta)", :annealing, dense = true, dark = true, size = "sm")
+                toggle("Duality solver (fixed labor, beta ≤ 1)", :duality, dense = true, dark = true, size = "sm")
+                toggle("Baseline comparison run", :compute_baseline, dense = true, dark = true, size = "sm")
+                toggle("Full Ipopt output in console", :solver_verbose, dense = true, dark = true, size = "sm")
+                toggle("Allow downgrading (lower bound 0)", :allow_downgrade, dense = true, dark = true, size = "sm")
+                toggle("Productivity floor (Zjn ≥ 1e-3, all goods)", :productivity_floor, dense = true, dark = true, size = "sm")
+                StippleUI.Selects.select(:linear_solver, options = ["mumps", "ma57", "ma86"],
+                                         label = "Ipopt linear solver",
+                                         dense = true, outlined = true, dark = true, options__dense = true,
+                                         title = "ma57/ma86 require a licensed HSL library (auto-detected; falls back to MUMPS)")
+                Html.div(class = "adv-info", [Html.span("Details on the advanced options", class = "adv-info-text"), info_icon("advanced")])
             ])
-            toggle("Labor mobility", :labor_mobility, dense = true)
-            toggle("Cross-good congestion", :cross_good_congestion, dense = true)
-            toggle("Simulated annealing (only if gamma > beta)", :annealing, dense = true)
-            toggle("Duality solver (fixed labor, beta ≤ 1)", :duality, dense = true)
-            toggle("Baseline comparison run", :compute_baseline, dense = true)
-            toggle("Full Ipopt output in console", :solver_verbose, dense = true)
-            toggle("Allow downgrading (default lower bound = current Ijk)", :allow_downgrade, dense = true)
         ])
 
         btn("Run Optimization", @click(:run), color = "primary", class = "run-btn", nocaps = true,
@@ -292,6 +421,7 @@ function ui()
         p(@text(:status_text), class = "status-line")
 
         Html.div(@iif(:has_results), class = "results-box", [
+            Html.div(class = "field-row", [Html.span("Results", class = "field-label"), info_icon("outputs")])
             p(@text(:results_text), class = "results-text")
             a("Download node results (CSV)", href = "/downloads/nodes_results.csv", target = "_blank", class = "dl-link")
             a("Download edge results (CSV)", href = "/downloads/edges_results.csv", target = "_blank", class = "dl-link")
@@ -311,21 +441,44 @@ const APP_LAYOUT = """
     <% Stipple.sesstoken() %>
     <title>Optimal Transport Networks</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/app.css?v=5">
     <style>[v-cloak] { display: none; }</style>
     <% join(Stipple.Layout.theme(), "\\n    ") %>
   </head>
   <body>
     <div id="otn-shell">
       <div id="otn-sidebar">
-        <% Stipple.page(model, partial = true, v__cloak = true, [Stipple.Genie.Renderer.Html.@yield], Stipple.@if(:isready)) %>
+        <div id="sidebar-topbtns">
+          <button id="sidebar-collapse" title="Collapse sidebar">&#8249;</button>
+        </div>
+        <div id="sidebar-scroll">
+          <% Stipple.page(model, partial = true, v__cloak = true, [Stipple.Genie.Renderer.Html.@yield], Stipple.@if(:isready)) %>
+        </div>
       </div>
       <div id="otn-main">
         <div id="map"></div>
-        <div id="output-card" class="hidden">
-          <div class="output-row"><label>Edges</label><select id="edge-metric"></select></div>
-          <div class="output-row"><label>Nodes</label><select id="node-metric"></select></div>
-          <div id="map-summary"></div>
+        <button id="sidebar-reopen" class="hidden" title="Show sidebar">&#8250;</button>
+        <div id="map-topright">
+          <div class="map-card" id="basemap-card">
+            <select id="basemap-select" title="Basemap"></select>
+          </div>
+          <div class="map-card hidden" id="layers-card">
+            <div class="layer-row">
+              <input type="checkbox" id="edges-visible" checked>
+              <label for="edges-visible">Edges</label>
+              <select id="edge-metric" title="Edge output to visualize"></select>
+            </div>
+            <div class="layer-row">
+              <input type="checkbox" id="nodes-visible" checked>
+              <label for="nodes-visible">Nodes</label>
+              <select id="node-metric" title="Node output to visualize"></select>
+            </div>
+            <div id="map-summary"></div>
+          </div>
+          <div class="map-card" id="zoom-card">
+            <button id="zoom-in" title="Zoom in">+</button>
+            <button id="zoom-out" title="Zoom out">&minus;</button>
+          </div>
         </div>
         <div id="legend" class="hidden"></div>
         <div id="console-panel" class="hidden">
@@ -341,10 +494,18 @@ const APP_LAYOUT = """
         <button id="console-reopen" class="hidden" title="Show solver console">Console</button>
       </div>
     </div>
+    <div id="info-modal" class="hidden">
+      <div id="info-overlay"></div>
+      <div id="info-card">
+        <button id="info-close" title="Close">✕</button>
+        <h2 id="info-title"></h2>
+        <div id="info-body"></div>
+      </div>
+    </div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-providers@2.0.0/leaflet-providers.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
-    <script src="/js/map.js"></script>
+    <script src="/js/map.js?v=3"></script>
   </body>
 </html>
 """

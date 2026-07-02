@@ -26,12 +26,28 @@ macro check(cond, msg)
 end
 FAILED = false
 
-# --- 1. Parse example CSVs ---------------------------------------------------
+# --- 0. The bundled CEMAC dataset parses and validates (no solve: that's a
+# research-scale problem; see test/cemac_solve_test.jl for an opt-in solve) ----
+let
+    cn, cnerr, _ = parse_nodes(read(joinpath(APP_ROOT, "data", "CEMAC", "nodes.csv")))
+    ce, _, ceerr, _ = parse_edges(read(joinpath(APP_ROOT, "data", "CEMAC", "edges.csv")))
+    @check cn !== nothing && ce !== nothing "CEMAC CSVs parse ($(join(vcat(cnerr, ceerr), "; ")))"
+    if cn !== nothing && ce !== nothing
+        cverr, _ = validate_network(cn, ce)
+        @check isempty(cverr) "CEMAC network validates"
+        @check nrow(cn) == 196 && nrow(ce) == 313 && maximum(cn.product) == 20 "CEMAC dimensions (196 nodes, 313 edges, 20 goods)"
+        cbs = budget_stats(ce)
+        @check isapprox(cbs.K_base, 49518.9, rtol = 1e-3) "CEMAC K_base ≈ 49518.9 ($(round(cbs.K_base, digits=1)))"
+    end
+end
+
+# --- 1. Parse the synthetic example CSVs --------------------------------------
 nodes_df, nerr, nwarn = parse_nodes(read(joinpath(APP_ROOT, "data", "example", "nodes.csv")))
 edges_df, geoms, eerr, ewarn = parse_edges(read(joinpath(APP_ROOT, "data", "example", "edges.csv")))
 @check nodes_df !== nothing "nodes.csv parses ($(isempty(nerr) ? "no errors" : join(nerr, "; ")))"
 @check edges_df !== nothing "edges.csv parses ($(isempty(eerr) ? "no errors" : join(eerr, "; ")))"
 @check count(g -> g !== nothing, geoms) == nrow(edges_df) "all LINESTRING geometries parsed"
+@check parse_linestring("LINESTRING (9.5 1.8, 10.1 2.2)") == [(9.5, 1.8), (10.1, 2.2)] "WKT LINESTRING parser works"
 
 verr, vwarn = validate_network(nodes_df, edges_df)
 @check isempty(verr) "cross-validation passes: $(join(verr, "; "))"

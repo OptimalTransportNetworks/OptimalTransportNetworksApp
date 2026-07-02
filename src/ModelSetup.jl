@@ -58,6 +58,25 @@ function budget_stats(edges::DataFrame)
     return (K_base = K_base, K_max = K_max)
 end
 
+"Locate a usable (non-stub) HSL library for Ipopt's ma57/ma86 linear solvers."
+function find_hsl_lib()
+    candidates = String[]
+    haskey(ENV, "OTN_HSL_LIB") && push!(candidates, ENV["OTN_HSL_LIB"])
+    push!(candidates, "/usr/local/lib/libhsl.dylib", "/opt/homebrew/lib/libhsl.dylib")
+    artifacts = joinpath(homedir(), ".julia", "artifacts")
+    if isdir(artifacts)
+        for d in readdir(artifacts; join = true)
+            f = joinpath(d, "lib", "libhsl.dylib")
+            isfile(f) && push!(candidates, f)
+        end
+    end
+    for f in candidates
+        # the LibHSL fallback stub is ~30 KB and exports no solvers
+        isfile(f) && filesize(f) > 1_000_000 && return f
+    end
+    return nothing
+end
+
 """
 Build (param, graph, mats) from the loaded network and UI parameters `p`
 (a NamedTuple; see the Run handler in app.jl for the fields).
@@ -65,6 +84,11 @@ Build (param, graph, mats) from the loaded network and UI parameters `p`
 function build_model(nodes::DataFrame, edges::DataFrame, p::NamedTuple)
     mats = build_matrices(nodes, edges; allow_downgrade = p.allow_downgrade)
     Zjn, N = build_Zjn(nodes)
+    if get(p, :productivity_floor, false)
+        # CEMAC-study regularization: every node can produce a little of every
+        # good; keeps dual prices of scarce goods bounded
+        Zjn = max.(Zjn, 1e-3)
+    end
 
     param = init_parameters(
         alpha = p.alpha, beta = p.beta, gamma = p.gamma, rho = p.rho,
@@ -82,6 +106,18 @@ function build_model(nodes::DataFrame, edges::DataFrame, p::NamedTuple)
 
     Lj = Float64.(nodes.population)
     Hj = hasproperty(nodes, :housing) ? Float64.(nodes.housing) : Lj .* (1 - p.alpha)
+
+    solver = get(p, :linear_solver, "mumps")
+    if solver != "mumps"
+        lib = find_hsl_lib()
+        if lib === nothing
+            println("[app] HSL library not found — falling back to MUMPS. ",
+                    "Set OTN_HSL_LIB or install libhsl to use $solver.")
+        else
+            println("[app] Using HSL $solver via $lib")
+            param[:optimizer_attr] = Dict(:hsllib => lib, :linear_solver => solver)
+        end
+    end
 
     graph = create_graph(param, type = "custom",
                          x = Float64.(nodes.lon), y = Float64.(nodes.lat),
