@@ -260,6 +260,22 @@ html, body {
   gap: 6px 12px;
 }
 
+/* three compact fields on one row, label stacked on top so the narrow
+   number inputs get the full column width (solver controls, sigma/a/nu) */
+.triple-grid {
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.triple-grid .pfield {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+}
+.triple-grid .pfield-label {
+  width: auto;
+  font-size: 0.72rem;
+}
+
 /* name-on-the-left parameter inputs */
 .pfield {
   display: flex;

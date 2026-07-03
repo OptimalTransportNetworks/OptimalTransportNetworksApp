@@ -50,7 +50,7 @@ model.cross_good_congestion[] = false
 model.annealing[] = false
 model.min_iter[] = 3
 model.max_iter[] = 12
-model.tol[] = 1e-4
+model.tol[] = 4 # tolerance digits: 1e-4
 
 model.run[] = true
 sleep(1.0)

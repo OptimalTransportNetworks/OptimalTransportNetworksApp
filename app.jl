@@ -168,7 +168,7 @@ function set_cemac_calibration!(m)
     m.cross_good_congestion[] = true
     m.annealing[] = false
     m.duality[] = true
-    m.tol[] = 1.0e-5
+    m.tol[] = 5 # tolerance digits: 1e-5
     m.min_iter[] = 15
     m.max_iter[] = 45
     m.productivity_floor[] = true # study floors the whole Zjn matrix at 1e-3
@@ -184,7 +184,7 @@ end
 function params_from_model(m)
     return (alpha = Float64(m.alpha[]), beta = Float64(m.beta[]), gamma = Float64(m.gamma[]),
             rho = Float64(m.rho[]), K = Float64(m.K[]),
-            tol = Float64(m.tol[]), min_iter = Float64(m.min_iter[]), max_iter = Float64(m.max_iter[]),
+            tol = 10.0^(-Float64(m.tol[])), min_iter = Float64(m.min_iter[]), max_iter = Float64(m.max_iter[]),
             sigma = Float64(m.sigma[]), a = Float64(m.a[]), nu = Float64(m.nu[]),
             labor_mobility = m.labor_mobility[],
             cross_good_congestion = m.cross_good_congestion[],
@@ -203,8 +203,8 @@ end
     @in gamma = 1.0
     @in rho = 0.0
     @in K = 1.0
-    # solver controls
-    @in tol = 1.0e-5
+    # solver controls (tol is the number of tolerance digits; 5 -> 1e-5)
+    @in tol = 5
     @in min_iter = 20
     @in max_iter = 200
     # advanced
@@ -411,7 +411,7 @@ function ui()
         p(@text(:budget_text), class = "budget-text", @iif(:budget_text))
 
         field_row("Solver Controls", "solver")
-        Html.div(class = "param-grid", [
+        Html.div(class = "param-grid triple-grid", [
             pfield("tol", :tol)
             pfield("min_iter", :min_iter)
             pfield("max_iter", :max_iter)
@@ -420,7 +420,7 @@ function ui()
         expansionitem(label = "Advanced Options", dense = true, dense__toggle = true, dark = true,
                       class = "advanced", header__class = "advanced-header", [
             Html.div(class = "adv-inner", [
-                Html.div(class = "param-grid", [
+                Html.div(class = "param-grid triple-grid", [
                     pfield("sigma", :sigma, step = "0.5")
                     pfield("a", :a, step = "0.05")
                     pfield("nu", :nu, step = "0.5")

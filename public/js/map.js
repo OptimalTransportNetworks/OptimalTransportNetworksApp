@@ -79,7 +79,7 @@
         '<tr><td><code>population</code></td><td>yes</td><td>population / labor L<sub>j</sub></td></tr>' +
         '<tr><td><code>productivity</code></td><td>yes</td><td>productivity Z<sub>j</sub> of the node’s good</td></tr>' +
         '<tr><td><code>housing</code></td><td>no</td><td>housing supply H<sub>j</sub>; default population × (1 − alpha)</td></tr>' +
-        '<tr><td><code>product</code></td><td>no</td><td>integer good index 1..N for multi-good economies (one good per node)</td></tr>' +
+        '<tr><td><code>product</code></td><td>no</td><td>integer good index 1..N for multi-good economies (one good per node). For computational reasons, keep the number of products < 20, especially with large networks.</td></tr>' +
         '<tr><td><code>name</code></td><td>no</td><td>label shown in map popups</td></tr></table>' +
         '<div class="note">Column names are case-sensitive. Extra columns are kept and shown in popups.</div>'
     },
@@ -129,7 +129,9 @@
     solver: {
       title: 'Solver Controls',
       html: '<h4>tol</h4><p>Convergence tolerance of the outer fixed-point iteration on the ' +
-        'infrastructure matrix.</p>' +
+        'infrastructure matrix, given as a <b>number of digits</b>: a value of ' +
+        '<code>n</code> means a tolerance of 10<sup>&minus;n</sup> (e.g. 5 &rarr; 1e-5). ' +
+        'Larger values solve to higher precision but take more iterations.</p>' +
         '<h4>min_iter / max_iter</h4><p>Minimum and maximum number of outer iterations. Each ' +
         'iteration solves the full trade equilibrium on the current network, then updates the ' +
         'network from the optimality condition.</p>' +
