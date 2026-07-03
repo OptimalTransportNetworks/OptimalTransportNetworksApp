@@ -433,7 +433,7 @@ function ui()
                 toggle("Full Ipopt output in console", :solver_verbose, dense = true, dark = true, size = "sm")
                 toggle("Allow downgrading (lower bound 0)", :allow_downgrade, dense = true, dark = true, size = "sm")
                 toggle("Productivity floor (Zjn ≥ 1e-3, all goods)", :productivity_floor, dense = true, dark = true, size = "sm")
-                field_row("Ipopt linear solver", "linear-solver")
+                field_row("Ipopt Linear Solver", "linear-solver")
                 # popup__content__class: the options menu portals to <body>, outside
                 # the dark sidebar — style it explicitly or the items render white-on-white
                 StippleUI.Selects.select(:linear_solver,
@@ -557,7 +557,7 @@ const APP_LAYOUT = """
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-providers@2.0.0/leaflet-providers.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
-    <script src="/js/map.js?v=11"></script>
+    <script src="/js/map.js?v=14"></script>
   </body>
 </html>
 """

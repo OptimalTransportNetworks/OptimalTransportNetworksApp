@@ -54,7 +54,7 @@
 
   var INFO = {
     guide: {
-      title: 'How to use this app',
+      title: 'How to Use This App',
       html: '<p>This app computes welfare-maximizing transport networks with ' +
         '<a href="https://github.com/OptimalTransportNetworks/OptimalTransportNetworks.jl" target="_blank" rel="noopener noreferrer">' +
         '<code>OptimalTransportNetworks.jl</code></a> (Fajgelbaum &amp; Schaal 2020, <i>Econometrica</i>).</p>' +
@@ -72,7 +72,7 @@
         'enable simulated annealing in that case.</div>'
     },
     'nodes-csv': {
-      title: 'Nodes CSV format',
+      title: 'Nodes CSV Format',
       html: '<table><tr><th>column</th><th>required</th><th>description</th></tr>' +
         '<tr><td><code>node</code></td><td>yes</td><td>integer id, consecutive 1..J</td></tr>' +
         '<tr><td><code>lon</code>, <code>lat</code></td><td>yes</td><td>WGS84 coordinates</td></tr>' +
@@ -84,7 +84,7 @@
         '<div class="note">Column names are case-sensitive. Extra columns are kept and shown in popups.</div>'
     },
     'edges-csv': {
-      title: 'Edges CSV format',
+      title: 'Edges CSV Format',
       html: '<p>One row per <b>undirected</b> edge:</p>' +
         '<table><tr><th>column</th><th>required</th><th>description</th></tr>' +
         '<tr><td><code>from</code>, <code>to</code></td><td>yes</td><td>node ids</td></tr>' +
@@ -97,7 +97,7 @@
         '<div class="note">Each edge should be listed once; both directions are treated symmetrically.</div>'
     },
     params: {
-      title: 'Model parameters',
+      title: 'Model Parameters',
       html: '<p>Per-capita utility from traded goods c and housing h:</p>' +
         '<div class="eq">u(c<sub>j</sub>, h<sub>j</sub>) = ' +
         '( c<sub>j</sub><sup>α</sup> h<sub>j</sub><sup>1−α</sup> )<sup>1−ρ</sup> / (1 − ρ)</div>' +
@@ -115,7 +115,7 @@
         'levels are negative — gains are still computed correctly.</p>'
     },
     budget: {
-      title: 'Infrastructure budget K',
+      title: 'Infrastructure Budget K',
       html: '<p>The planner builds the network subject to the resource constraint</p>' +
         '<div class="eq">Σ<sub>jk</sub> δ<sup>I</sup><sub>jk</sub> · I<sub>jk</sub> ≤ K</div>' +
         '<p>summed over the (undirected) edge list, with <code>delta_i</code> = δ<sup>I</sup> ' +
@@ -127,7 +127,7 @@
         'the symmetric-matrix convention (2K); the app converts automatically.</div>'
     },
     solver: {
-      title: 'Solver controls',
+      title: 'Solver Controls',
       html: '<h4>tol</h4><p>Convergence tolerance of the outer fixed-point iteration on the ' +
         'infrastructure matrix.</p>' +
         '<h4>min_iter / max_iter</h4><p>Minimum and maximum number of outer iterations. Each ' +
@@ -164,11 +164,15 @@
         'Z<sub>jn</sub> ≥ 10<sup>−3</sup>, so every node can produce a little of every good ' +
         '(the CEMAC study\'s regularization — keeps prices of scarce goods bounded and helps ' +
         'the solver converge on large multi-good networks).</p>' +
-        '<h4>Ipopt linear solver</h4><p>See the ⓘ icon next to the solver dropdown.</p>'
+        '<h4>Ipopt Linear Solver</h4><p>See the ⓘ icon next to the solver dropdown.</p>'
     },
     'linear-solver': {
-      title: 'Ipopt linear solver',
-      html: '<p>Each Ipopt iteration solves a large sparse symmetric linear system — the choice ' +
+      title: 'Ipopt Linear Solver',
+      html: '<p><a href="https://coin-or.github.io/Ipopt/" target="_blank">Ipopt</a> (Interior Point ' +
+        'Optimizer) is the open-source large-scale nonlinear programming solver that computes the ' +
+        'general-equilibrium allocation (goods flows, prices, consumption) on the current network in ' +
+        'every iteration of the planner\'s problem.</p>' +
+        '<p>Each Ipopt iteration solves a large sparse symmetric linear system — the choice ' +
         'of factorization routine dominates both speed and robustness.</p>' +
         '<table><tr><th>solver</th><th>best for</th></tr>' +
         '<tr><td><code>ma27</code></td><td>small problems; outdated but dependable</td></tr>' +
