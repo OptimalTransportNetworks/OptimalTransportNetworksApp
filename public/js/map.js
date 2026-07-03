@@ -20,13 +20,18 @@
     version: -1,
     bboxKey: '',
     edgeMetric: null,
-    nodeMetric: 'none',
+    nodeMetric: null,   // defaults to 'productivity' when node metrics first load
     edgesVisible: true,
     nodesVisible: true,
+    cmapOverride: {},      // metric key -> palette chosen by the user
+    transformOverride: {}, // metric key -> transformation chosen by the user
+    edgeSizeVar: null,     // variable driving segment width ('none' = uniform)
+    nodeSizeVar: null,     // variable driving circle size ('none' = uniform)
+    edgeScaleInfo: null,   // scale/domain used in the last render (for the legend)
+    nodeScaleInfo: null,
     consoleCursor: 0,
     consoleOpen: false,
-    running: false,
-    maxPop: 1
+    running: false
   };
 
   var PALETTES = {
@@ -37,7 +42,12 @@
     ylorrd: ['#ffffcc', '#ffeda0', '#fed976', '#feb24c', '#fd8d3c', '#fc4e2a',
              '#e31a1c', '#bd0026', '#800026'],
     rdbu: ['#b2182b', '#d6604d', '#f4a582', '#fddbc7', '#f7f7f7', '#d1e5f0',
-           '#92c5de', '#4393c3', '#2166ac']
+           '#92c5de', '#4393c3', '#2166ac'],
+    plasma: ['#0d0887', '#41049d', '#6a00a8', '#8f0da4', '#b12a90', '#cc4778',
+             '#e16462', '#f2844b', '#fca636', '#f0f921'],
+    turbo: ['#30123b', '#4145ab', '#4675ed', '#39a2fc', '#1bcfd4', '#24eca6',
+            '#61fc6c', '#a4fc3b', '#d1e834', '#f3c63a', '#fe9b2d', '#f36315',
+            '#d93806', '#b11901', '#7a0402']
   };
 
   /* ------------------------------------------------------------ info modal */
@@ -46,7 +56,8 @@
     guide: {
       title: 'How to use this app',
       html: '<p>This app computes welfare-maximizing transport networks with ' +
-        '<code>OptimalTransportNetworks.jl</code> (Fajgelbaum &amp; Schaal 2020, <i>Econometrica</i>).</p>' +
+        '<a href="https://github.com/OptimalTransportNetworks/OptimalTransportNetworks.jl" target="_blank" rel="noopener noreferrer">' +
+        '<code>OptimalTransportNetworks.jl</code></a> (Fajgelbaum &amp; Schaal 2020, <i>Econometrica</i>).</p>' +
         '<h4>1 — Upload a network</h4>' +
         '<p>Upload a nodes CSV and an edges CSV (see the ⓘ icons next to the upload fields for the ' +
         'required columns), or click <b>Load example</b>.</p>' +
@@ -153,10 +164,30 @@
         'Z<sub>jn</sub> ≥ 10<sup>−3</sup>, so every node can produce a little of every good ' +
         '(the CEMAC study\'s regularization — keeps prices of scarce goods bounded and helps ' +
         'the solver converge on large multi-good networks).</p>' +
-        '<h4>Ipopt linear solver</h4><p>MUMPS is bundled; <code>ma57</code>/<code>ma86</code> ' +
-        'are substantially faster and more robust on large problems but require a licensed HSL ' +
-        'library (auto-detected from <code>OTN_HSL_LIB</code>, <code>/usr/local/lib</code>, or ' +
-        'Julia artifacts; silently falls back to MUMPS if not found).</p>'
+        '<h4>Ipopt linear solver</h4><p>See the ⓘ icon next to the solver dropdown.</p>'
+    },
+    'linear-solver': {
+      title: 'Ipopt linear solver',
+      html: '<p>Each Ipopt iteration solves a large sparse symmetric linear system — the choice ' +
+        'of factorization routine dominates both speed and robustness.</p>' +
+        '<table><tr><th>solver</th><th>best for</th></tr>' +
+        '<tr><td><code>ma27</code></td><td>small problems; outdated but dependable</td></tr>' +
+        '<tr><td><code>ma57</code></td><td>small–medium problems; threaded BLAS (default)</td></tr>' +
+        '<tr><td><code>ma77</code></td><td>huge problems; out-of-core (disk-backed) factorization</td></tr>' +
+        '<tr><td><code>ma86</code></td><td>large problems; highly parallel on many cores</td></tr>' +
+        '<tr><td><code>ma97</code></td><td>all sizes; parallel with repeatable answers</td></tr>' +
+        '<tr><td><code>mumps</code></td><td>open-source fallback bundled with Ipopt</td></tr></table>' +
+        '<p>The <code>ma*</code> routines are part of <a href="https://licences.stfc.ac.uk/product/coin-hsl" ' +
+        'target="_blank">Coin-HSL</a> (free academic licence). Download ' +
+        '<a href="https://licences.stfc.ac.uk/product/libhsl-2023_11_7" target="_blank">libHSL</a>, which ships ' +
+        'the Julia package <code>HSL_jll.jl</code>, and install it with ' +
+        '<code>Pkg.develop(path="…/HSL_jll.jl-2023.11.7")</code> (see ' +
+        '<a href="https://github.com/JuliaSmoothOptimizers/HSL.jl" target="_blank">HSL.jl</a>). The app picks it ' +
+        'up automatically from any environment on the load path (or from <code>OTN_HSL_LIB</code> / ' +
+        '<code>/usr/local/lib</code>).</p>' +
+        '<div class="note">If no usable HSL library is found, the run falls back to MUMPS with a note in the ' +
+        'console. MUMPS handles the bundled example but tends to stall on large multi-good networks like the ' +
+        'CEMAC one — the HSL solvers are strongly recommended there.</div>'
     },
     outputs: {
       title: 'Outputs',
@@ -237,21 +268,82 @@
     return null;
   }
 
-  function makeScale(metric) {
-    var lo = metric.min, hi = metric.max;
-    if (metric.key === 'perc_upgraded') { lo = 0; hi = 100; }
-    if (metric.diverging) {
-      var m = Math.max(Math.abs(lo), Math.abs(hi));
+  var TRANSFORMS = {
+    level: { f: function (x) { return x; }, inv: function (x) { return x; } },
+    log:   { f: function (x) { return x > 0 ? Math.log(x) : NaN; }, inv: Math.exp },
+    log10: { f: function (x) { return x > 0 ? Math.log10(x) : NaN; }, inv: function (x) { return Math.pow(10, x); } },
+    log1p: { f: function (x) { return x > -1 ? Math.log1p(x) : NaN; }, inv: function (x) { return Math.expm1(x); } },
+    sqrt:  { f: function (x) { return x >= 0 ? Math.sqrt(x) : NaN; }, inv: function (x) { return x * x; } },
+    cbrt:  { f: Math.cbrt, inv: function (x) { return x * x * x; } }
+  };
+
+  function paletteFor(metric) {
+    return S.cmapOverride[metric.key] || metric.palette || 'viridis';
+  }
+
+  function transformFor(metric) {
+    return S.transformOverride[metric.key] || 'level';
+  }
+
+  /* Scale over the TRANSFORMED values; the legend back-transforms tick labels. */
+  function makeScale(metric, rawValues) {
+    var tfName = transformFor(metric);
+    var tf = TRANSFORMS[tfName] || TRANSFORMS.level;
+    var lo, hi;
+    if (tfName === 'level' && metric.key === 'perc_upgraded') {
+      lo = 0; hi = 100;
+    } else if (tfName === 'level' && metric.diverging) {
+      var m = Math.max(Math.abs(metric.min), Math.abs(metric.max));
       lo = -m; hi = m;
+    } else {
+      var vals = (rawValues || [])
+        .map(tf.f)
+        .filter(function (v) { return typeof v === 'number' && isFinite(v); });
+      if (vals.length) {
+        lo = Math.min.apply(null, vals);
+        hi = Math.max.apply(null, vals);
+      } else {
+        lo = tf.f(metric.min); hi = tf.f(metric.max);
+        if (!isFinite(lo)) lo = 0;
+        if (!isFinite(hi)) hi = 1;
+      }
     }
     if (!(hi > lo)) hi = lo + 1e-9;
-    var pal = PALETTES[metric.palette] || PALETTES.viridis;
-    return { scale: chroma.scale(pal).domain([lo, hi]), lo: lo, hi: hi, pal: pal };
+    var pal = PALETTES[paletteFor(metric)] || PALETTES.viridis;
+    return { scale: chroma.scale(pal).domain([lo, hi]), lo: lo, hi: hi, pal: pal,
+             tf: tf, tfName: tfName };
+  }
+
+  function scaledValue(sc, v) {
+    if (typeof v !== 'number') return NaN;
+    var t = sc.tf.f(v);
+    return isFinite(t) ? t : NaN;
   }
 
   function norm(v, lo, hi) {
     var t = (v - lo) / (hi - lo);
     return t < 0 ? 0 : (t > 1 ? 1 : t);
+  }
+
+  /* Normalizer for the size variable: props -> [0, 1] over the metric's
+   * (transformed) data range, or null when sizing is 'none'/unavailable. */
+  function sizeNormalizer(metrics, key, features) {
+    if (!key || key === 'none') return null;
+    var metric = metricByKey(metrics, key);
+    if (!metric) return null;
+    var tf = TRANSFORMS[transformFor(metric)] || TRANSFORMS.level;
+    var vals = features
+      .map(function (f) { var v = f.properties[key]; return typeof v === 'number' ? tf.f(v) : NaN; })
+      .filter(function (v) { return isFinite(v); });
+    if (!vals.length) return null;
+    var lo = Math.min.apply(null, vals);
+    var hi = Math.max.apply(null, vals);
+    if (!(hi > lo)) hi = lo + 1e-9;
+    return function (props) {
+      var v = props[key];
+      var t = typeof v === 'number' ? tf.f(v) : NaN;
+      return isFinite(t) ? norm(t, lo, hi) : 0;
+    };
   }
 
   /* ------------------------------------------------------------ rendering */
@@ -276,19 +368,26 @@
 
   function renderEdges() {
     if (S.edgeLayer) { S.map.removeLayer(S.edgeLayer); S.edgeLayer = null; }
+    S.edgeScaleInfo = null;
     if (!S.data || !S.data.edges || !S.edgesVisible) return;
     var metric = metricByKey(S.data.edge_metrics, S.edgeMetric);
-    var sc = metric ? makeScale(metric) : null;
+    var sc = null;
+    if (metric) {
+      var raw = S.data.edges.features.map(function (f) { return f.properties[metric.key]; });
+      sc = makeScale(metric, raw);
+      S.edgeScaleInfo = sc;
+    }
+    var sizeFn = sizeNormalizer(S.data.edge_metrics, S.edgeSizeVar, S.data.edges.features);
 
     S.edgeLayer = L.geoJSON(S.data.edges, {
       renderer: S.renderer,
       style: function (f) {
-        var st = { color: '#888', weight: 2, opacity: 0.9 };
+        var st = { color: '#888', weight: 2.5, opacity: 0.9 };
+        if (sizeFn) st.weight = 0.8 + 6 * sizeFn(f.properties);
         if (sc) {
-          var v = f.properties[metric.key];
-          if (typeof v === 'number') {
-            st.color = sc.scale(v).hex();
-            st.weight = 1.5 + 5 * norm(v, sc.lo, sc.hi);
+          var tv = scaledValue(sc, f.properties[metric.key]);
+          if (isFinite(tv)) {
+            st.color = sc.scale(tv).hex();
           } else {
             st.color = '#bbb'; st.weight = 1; st.dashArray = '3,4';
           }
@@ -305,24 +404,25 @@
 
   function renderNodes() {
     if (S.nodeLayer) { S.map.removeLayer(S.nodeLayer); S.nodeLayer = null; }
+    S.nodeScaleInfo = null;
     if (!S.data || !S.data.nodes || !S.nodesVisible) return;
     var metric = S.nodeMetric === 'none' ? null : metricByKey(S.data.node_metrics, S.nodeMetric);
-    var sc = metric ? makeScale(metric) : null;
+    var sc = null;
+    if (metric) {
+      var raw = S.data.nodes.features.map(function (f) { return f.properties[metric.key]; });
+      sc = makeScale(metric, raw);
+      S.nodeScaleInfo = sc;
+    }
 
-    S.maxPop = 1;
-    S.data.nodes.features.forEach(function (f) {
-      var p = f.properties.population;
-      if (typeof p === 'number' && p > S.maxPop) S.maxPop = p;
-    });
+    var sizeFn = sizeNormalizer(S.data.node_metrics, S.nodeSizeVar, S.data.nodes.features);
 
     S.nodeLayer = L.geoJSON(S.data.nodes, {
       pointToLayer: function (f, latlng) {
-        var p = f.properties.population || 0;
-        var r = 3 + 11 * Math.sqrt(p / S.maxPop);
+        var r = sizeFn ? 2 + 11 * Math.sqrt(sizeFn(f.properties)) : 5;
         var color = '#3a6ea5';
         if (sc) {
-          var v = f.properties[metric.key];
-          color = (typeof v === 'number') ? sc.scale(v).hex() : '#bbb';
+          var tv = scaledValue(sc, f.properties[metric.key]);
+          color = isFinite(tv) ? sc.scale(tv).hex() : '#bbb';
         }
         return L.circleMarker(latlng, {
           renderer: S.renderer,
@@ -342,11 +442,11 @@
 
   /* ----------------------------------------------------- selectors/legend */
 
-  function fillSelect(sel, metrics, current, withNone) {
+  function fillSelect(sel, metrics, current, noneLabel) {
     sel.innerHTML = '';
-    if (withNone) {
+    if (noneLabel) {
       var o = document.createElement('option');
-      o.value = 'none'; o.textContent = '— size by population —';
+      o.value = 'none'; o.textContent = noneLabel;
       sel.appendChild(o);
     }
     (metrics || []).forEach(function (m) {
@@ -359,12 +459,49 @@
     return sel.value;
   }
 
+  function syncCmapSelect(sel, metrics, metricKey) {
+    if (metricKey === 'none' || !metricByKey(metrics, metricKey)) {
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    sel.value = paletteFor(metricByKey(metrics, metricKey));
+  }
+
+  function syncTransformSelect(sel, metrics, metricKey) {
+    if (metricKey === 'none' || !metricByKey(metrics, metricKey)) {
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    sel.value = transformFor(metricByKey(metrics, metricKey));
+  }
+
   function updateSelectors() {
     var card = document.getElementById('layers-card');
-    if (!S.data || !S.data.has_network) { card.classList.add('hidden'); return; }
+    if (!S.data || (!S.data.nodes && !S.data.edges)) { card.classList.add('hidden'); return; }
     card.classList.remove('hidden');
-    S.edgeMetric = fillSelect(document.getElementById('edge-metric'), S.data.edge_metrics, S.edgeMetric, false);
-    S.nodeMetric = fillSelect(document.getElementById('node-metric'), S.data.node_metrics, S.nodeMetric, true);
+    var em = S.data.edge_metrics || [];
+    var nm = S.data.node_metrics || [];
+    // defaults on first load of each layer (metric state stays null until then,
+    // so a nodes-first or edges-first upload still gets its defaults later)
+    if (S.nodeMetric === null && metricByKey(nm, 'productivity')) S.nodeMetric = 'productivity';
+    if (S.nodeSizeVar === null && nm.length) S.nodeSizeVar = 'population';
+    var v = fillSelect(document.getElementById('edge-metric'), em, S.edgeMetric, null);
+    S.edgeMetric = em.length ? v : null;
+    if (S.edgeSizeVar === null && em.length) S.edgeSizeVar = S.edgeMetric; // size follows the colour variable
+    v = fillSelect(document.getElementById('node-metric'), nm, S.nodeMetric, '— none —');
+    S.nodeMetric = nm.length ? v : null;
+    v = fillSelect(document.getElementById('edge-sizevar'), em, S.edgeSizeVar, '— none —');
+    S.edgeSizeVar = em.length ? v : null;
+    v = fillSelect(document.getElementById('node-sizevar'), nm, S.nodeSizeVar, '— none —');
+    S.nodeSizeVar = nm.length ? v : null;
+    syncCmapSelect(document.getElementById('edge-cmap'), S.data.edge_metrics, S.edgeMetric);
+    syncCmapSelect(document.getElementById('node-cmap'), S.data.node_metrics, S.nodeMetric);
+    // the transform is keyed to the SIZE variable (it also shapes the colour
+    // scale of any aspect that uses the same variable)
+    syncTransformSelect(document.getElementById('edge-transform'), S.data.edge_metrics, S.edgeSizeVar);
+    syncTransformSelect(document.getElementById('node-transform'), S.data.node_metrics, S.nodeSizeVar);
 
     var sm = document.getElementById('map-summary');
     var s = S.data.summary || {};
@@ -374,16 +511,18 @@
     sm.textContent = parts.join(' · ');
   }
 
-  function legendBlock(metric) {
-    var sc = makeScale(metric);
+  function legendBlock(metric, sc) {
     var stops = sc.pal.map(function (c, i) {
       return c + ' ' + (i / (sc.pal.length - 1) * 100).toFixed(0) + '%';
     });
+    // ticks are evenly spaced in TRANSFORMED space; labels show original values
     var ticks = [0, 0.25, 0.5, 0.75, 1].map(function (p) {
-      return '<span style="left:' + (p * 100) + '%">' + fmt(sc.lo + p * (sc.hi - sc.lo)) + '</span>';
+      return '<span style="left:' + (p * 100) + '%">' +
+        fmt(sc.tf.inv(sc.lo + p * (sc.hi - sc.lo))) + '</span>';
     }).join('');
+    var title = metric.label + (sc.tfName !== 'level' ? ' — ' + sc.tfName + ' scale' : '');
     return '<div class="legend-block">' +
-      '<div class="legend-label">' + metric.label + '</div>' +
+      '<div class="legend-label">' + title + '</div>' +
       '<div class="legend-bar" style="background:linear-gradient(to right,' + stops.join(',') + ')"></div>' +
       '<div class="legend-ticks">' + ticks + '</div>' +
       '</div>';
@@ -393,10 +532,10 @@
     var el = document.getElementById('legend');
     var html = '';
     var em = S.edgesVisible ? metricByKey(S.data && S.data.edge_metrics, S.edgeMetric) : null;
-    if (em) html += legendBlock(em);
+    if (em && S.edgeScaleInfo) html += legendBlock(em, S.edgeScaleInfo);
     var nm = (S.nodesVisible && S.nodeMetric !== 'none') ?
       metricByKey(S.data && S.data.node_metrics, S.nodeMetric) : null;
-    if (nm) html += legendBlock(nm);
+    if (nm && S.nodeScaleInfo) html += legendBlock(nm, S.nodeScaleInfo);
     el.innerHTML = html;
     el.classList.toggle('hidden', html === '');
   }
@@ -453,10 +592,17 @@
         S.version = d.version;
         updateSelectors();
         redraw();
-        if (d.has_network && d.nodes && d.nodes.features.length) {
-          var latlngs = d.nodes.features.map(function (f) {
+        var latlngs = [];
+        if (d.nodes && d.nodes.features.length) {
+          latlngs = d.nodes.features.map(function (f) {
             return [f.geometry.coordinates[1], f.geometry.coordinates[0]];
           });
+        } else if (d.edges && d.edges.features.length) {
+          d.edges.features.forEach(function (f) {
+            f.geometry.coordinates.forEach(function (c) { latlngs.push([c[1], c[0]]); });
+          });
+        }
+        if (latlngs.length) {
           var key = JSON.stringify([latlngs.length, latlngs[0], latlngs[latlngs.length - 1]]);
           if (key !== S.bboxKey) {
             S.bboxKey = key;
@@ -490,8 +636,57 @@
   function init() {
     initMap();
 
-    on('edge-metric', 'change', function (e) { S.edgeMetric = e.target.value; redraw(); });
-    on('node-metric', 'change', function (e) { S.nodeMetric = e.target.value; redraw(); });
+    // colour-map and transform selects: one option per palette / transformation
+    ['edge-cmap', 'node-cmap'].forEach(function (id) {
+      var sel = document.getElementById(id);
+      Object.keys(PALETTES).forEach(function (name) {
+        var o = document.createElement('option');
+        o.value = name; o.textContent = name;
+        sel.appendChild(o);
+      });
+    });
+    ['edge-transform', 'node-transform'].forEach(function (id) {
+      var sel = document.getElementById(id);
+      Object.keys(TRANSFORMS).forEach(function (name) {
+        var o = document.createElement('option');
+        o.value = name; o.textContent = name;
+        sel.appendChild(o);
+      });
+    });
+
+    on('edge-metric', 'change', function (e) {
+      S.edgeMetric = e.target.value;
+      syncCmapSelect(document.getElementById('edge-cmap'), S.data && S.data.edge_metrics, S.edgeMetric);
+      redraw();
+    });
+    on('node-metric', 'change', function (e) {
+      S.nodeMetric = e.target.value;
+      syncCmapSelect(document.getElementById('node-cmap'), S.data && S.data.node_metrics, S.nodeMetric);
+      redraw();
+    });
+    on('edge-cmap', 'change', function (e) {
+      if (S.edgeMetric) { S.cmapOverride[S.edgeMetric] = e.target.value; redraw(); }
+    });
+    on('node-cmap', 'change', function (e) {
+      if (S.nodeMetric && S.nodeMetric !== 'none') { S.cmapOverride[S.nodeMetric] = e.target.value; redraw(); }
+    });
+    // transforms are keyed to the size variable
+    on('edge-transform', 'change', function (e) {
+      if (S.edgeSizeVar && S.edgeSizeVar !== 'none') { S.transformOverride[S.edgeSizeVar] = e.target.value; redraw(); }
+    });
+    on('node-transform', 'change', function (e) {
+      if (S.nodeSizeVar && S.nodeSizeVar !== 'none') { S.transformOverride[S.nodeSizeVar] = e.target.value; redraw(); }
+    });
+    on('edge-sizevar', 'change', function (e) {
+      S.edgeSizeVar = e.target.value;
+      syncTransformSelect(document.getElementById('edge-transform'), S.data && S.data.edge_metrics, S.edgeSizeVar);
+      redraw();
+    });
+    on('node-sizevar', 'change', function (e) {
+      S.nodeSizeVar = e.target.value;
+      syncTransformSelect(document.getElementById('node-transform'), S.data && S.data.node_metrics, S.nodeSizeVar);
+      redraw();
+    });
     on('edges-visible', 'change', function (e) { S.edgesVisible = e.target.checked; redraw(); });
     on('nodes-visible', 'change', function (e) { S.nodesVisible = e.target.checked; redraw(); });
     on('zoom-in', 'click', function () { S.map.zoomIn(); });

@@ -119,7 +119,7 @@ edge_metric_defs(df::DataFrame) = begin
             push_metric!(c, "Flow of good $(c[5:end])", "ylorrd")
         end
     end
-    push_metric!("Ijk_orig", "Initial infrastructure (input Ijk)", "viridis")
+    push_metric!("Ijk_orig", "Initial infrastructure (input Ijk)", "inferno")
     defs
 end
 
@@ -158,31 +158,42 @@ function feature_properties(row)
     return props
 end
 
+"Build features for whatever is loaded — nodes only, edges only, or both."
 function build_features()
     nodes, edges = STATE.nodes, STATE.edges
-    edf = edge_table()
-    ndf = node_table()
 
+    edf = edges === nothing ? nothing : edge_table()
     edge_features = Any[]
-    for (i, row) in enumerate(eachrow(edf))
-        geom = i <= length(STATE.geometries) ? STATE.geometries[i] : nothing
-        coords = geom === nothing ?
-            Any[[jnum(nodes.lon[row.from]), jnum(nodes.lat[row.from])],
-                [jnum(nodes.lon[row.to]), jnum(nodes.lat[row.to])]] :
-            Any[[jnum(p[1]), jnum(p[2])] for p in geom]
-        push!(edge_features, Dict(
-            "type" => "Feature",
-            "geometry" => Dict("type" => "LineString", "coordinates" => coords),
-            "properties" => feature_properties(row)))
+    if edf !== nothing
+        J = nodes === nothing ? 0 : nrow(nodes)
+        for (i, row) in enumerate(eachrow(edf))
+            geom = i <= length(STATE.geometries) ? STATE.geometries[i] : nothing
+            local coords
+            if geom !== nothing
+                coords = Any[[jnum(p[1]), jnum(p[2])] for p in geom]
+            elseif 1 <= row.from <= J && 1 <= row.to <= J
+                coords = Any[[jnum(nodes.lon[row.from]), jnum(nodes.lat[row.from])],
+                             [jnum(nodes.lon[row.to]), jnum(nodes.lat[row.to])]]
+            else
+                continue # no WKT geometry and no nodes to place the edge — skip
+            end
+            push!(edge_features, Dict(
+                "type" => "Feature",
+                "geometry" => Dict("type" => "LineString", "coordinates" => coords),
+                "properties" => feature_properties(row)))
+        end
     end
 
+    ndf = nodes === nothing ? nothing : node_table()
     node_features = Any[]
-    for row in eachrow(ndf)
-        push!(node_features, Dict(
-            "type" => "Feature",
-            "geometry" => Dict("type" => "Point",
-                               "coordinates" => [jnum(row.lon), jnum(row.lat)]),
-            "properties" => feature_properties(row)))
+    if ndf !== nothing
+        for row in eachrow(ndf)
+            push!(node_features, Dict(
+                "type" => "Feature",
+                "geometry" => Dict("type" => "Point",
+                                   "coordinates" => [jnum(row.lon), jnum(row.lat)]),
+                "properties" => feature_properties(row)))
+        end
     end
 
     return edf, ndf, edge_features, node_features
@@ -203,26 +214,32 @@ function run_summary_dict()
     return d
 end
 
-"Rebuild the JSON payload served at /api/mapdata and bump the version counter."
+"Rebuild the JSON payload served at /api/mapdata and bump the version counter.
+Partial uploads are visualized immediately: nodes-only and edges-only payloads
+carry the respective layer; `has_network` still means both-loaded-and-valid."
 function rebuild_mapdata!()
     lock(STATE_LOCK) do
         newv = STATE.version + 1
-        if !STATE.network_valid || STATE.nodes === nothing || STATE.edges === nothing
+        if STATE.nodes === nothing && STATE.edges === nothing
             STATE.mapdata_json = JSON3.write(Dict(
                 "version" => newv, "has_network" => false, "has_results" => false))
         else
             edf, ndf, edge_features, node_features = build_features()
-            n_goods = hasproperty(STATE.nodes, :product) ? maximum(STATE.nodes.product) : 1
-            STATE.mapdata_json = JSON3.write(Dict(
+            d = Dict{String, Any}(
                 "version" => newv,
-                "has_network" => true,
+                "has_network" => STATE.network_valid,
                 "has_results" => STATE.results !== nothing,
-                "n_goods" => n_goods,
-                "summary" => run_summary_dict(),
-                "edge_metrics" => edge_metric_defs(edf),
-                "node_metrics" => node_metric_defs(ndf),
-                "edges" => Dict("type" => "FeatureCollection", "features" => edge_features),
-                "nodes" => Dict("type" => "FeatureCollection", "features" => node_features)))
+                "summary" => run_summary_dict())
+            if STATE.nodes !== nothing
+                d["n_goods"] = hasproperty(STATE.nodes, :product) ? maximum(STATE.nodes.product) : 1
+                d["node_metrics"] = node_metric_defs(ndf)
+                d["nodes"] = Dict("type" => "FeatureCollection", "features" => node_features)
+            end
+            if edf !== nothing && !isempty(edge_features)
+                d["edge_metrics"] = edge_metric_defs(edf)
+                d["edges"] = Dict("type" => "FeatureCollection", "features" => edge_features)
+            end
+            STATE.mapdata_json = JSON3.write(d)
         end
         STATE.version = newv
     end

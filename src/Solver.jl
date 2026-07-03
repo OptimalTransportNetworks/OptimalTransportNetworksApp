@@ -30,10 +30,19 @@ function start_solve!(p::NamedTuple; on_progress::Function, on_done::Function, o
     lock(STATE_LOCK) do
         STATE.running = true
     end
+    OptimalTransportNetworks.ABORT_SOLVE[] = false
     console_clear!()
     console_push!("[app] Building model: $(nrow(nodes)) nodes, $(nrow(edges)) edges, K = $(p.K) (internal 2K = $(2 * p.K)).")
 
     Threads.@spawn :default _solve_task(nodes, edges, p, on_progress, on_done, on_error)
+    return true
+end
+
+"Request a cooperative abort: Ipopt stops at its next iteration via the package's intermediate callback."
+function abort_solve!()
+    STATE.running || return false
+    OptimalTransportNetworks.ABORT_SOLVE[] = true
+    console_push!("[app] Abort requested — stopping the solver at the next Ipopt iteration...")
     return true
 end
 
@@ -43,7 +52,10 @@ function _solve_task(nodes, edges, p, on_progress, on_done, on_error)
     plock = ReentrantLock()
 
     rd, wr = redirect_stdout()
-    reader = @async begin
+    # The reader must live on its OWN thread: an @async task would be sticky to
+    # this thread, which blocks inside Ipopt's C code for the whole solve — the
+    # console would only update after convergence.
+    reader = Threads.@spawn :default begin
         try
             for line in eachline(rd)
                 lock(plock) do
@@ -119,6 +131,10 @@ function _solve_task(nodes, edges, p, on_progress, on_done, on_error)
 end
 
 function drain_console!(pending::Vector{String}, plock::ReentrantLock, on_progress::Function)
+    try
+        Libc.flush_cstdio() # push Ipopt's block-buffered C output into the pipe
+    catch
+    end
     batch = lock(plock) do
         isempty(pending) && return nothing
         b = copy(pending)

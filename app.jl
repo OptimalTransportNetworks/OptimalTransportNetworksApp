@@ -161,7 +161,7 @@ function set_cemac_calibration!(m)
     m.alpha[] = 0.7
     m.beta[] = 1.0
     m.gamma[] = 1.2 # IRS case of the study; > beta, solved without annealing there
-    m.rho[] = 2.0
+    m.rho[] = 0.0
     m.sigma[] = 3.8 # Armington
     m.a[] = 1.0
     m.nu[] = 2.0
@@ -172,6 +172,7 @@ function set_cemac_calibration!(m)
     m.min_iter[] = 15
     m.max_iter[] = 45
     m.productivity_floor[] = true # study floors the whole Zjn matrix at 1e-3
+    m.linear_solver[] = "ma57"    # study used ma57/ma86 (HSL); MUMPS stalls at this size
     return
 end
 
@@ -200,7 +201,7 @@ end
     @in alpha = 0.5
     @in beta = 1.0
     @in gamma = 1.0
-    @in rho = 2.0
+    @in rho = 0.0
     @in K = 1.0
     # solver controls
     @in tol = 1.0e-5
@@ -217,8 +218,8 @@ end
     @in compute_baseline = true
     @in solver_verbose = false
     @in allow_downgrade = false
-    @in productivity_floor = false
-    @in linear_solver = "mumps"
+    @in productivity_floor = true
+    @in linear_solver = "ma57"
     # actions
     @in run = false
     @in load_example = false
@@ -285,32 +286,37 @@ end
 
     @onbutton run begin
         MODEL_REF[] = __model__
-        if gamma > beta && !annealing
-            status_text = "Note: gamma > beta makes the problem non-convex — consider enabling annealing."
-        end
         m = __model__
-        p = params_from_model(m)
-        started = start_solve!(p;
-            on_progress = (it, dist) -> begin
-                m.status_text[] = "Iteration $it / $(Int(round(p.max_iter))) — distance $(round(dist, sigdigits = 3)) (tol $(p.tol))"
-            end,
-            on_done = (results, baseline, param, mats, elapsed) -> begin
-                summary = finish_run!(results, baseline, param, mats, p, elapsed)
-                m.running[] = false
-                m.has_results[] = true
-                m.results_text[] = summary
-                m.status_text[] = "Done — select outputs on the map."
-            end,
-            on_error = msg -> begin
-                m.running[] = false
-                m.status_text[] = "Error: " * first(msg, 400)
-            end)
-        if started
-            running = true
-            has_results = false
-            status_text = "Solving — see console for solver output..."
+        if STATE.running # button doubles as "Abort Optimization" while solving
+            abort_solve!()
+            status_text = "Aborting — the solver stops at its next iteration..."
         else
-            status_text = "Could not start: " * (STATE.running ? "a solve is already running." : "no valid network loaded.")
+            p = params_from_model(m)
+            started = start_solve!(p;
+                on_progress = (it, dist) -> begin
+                    m.status_text[] = "Iteration $it / $(Int(round(p.max_iter))) — distance $(round(dist, sigdigits = 3)) (tol $(p.tol))"
+                end,
+                on_done = (results, baseline, param, mats, elapsed) -> begin
+                    summary = finish_run!(results, baseline, param, mats, p, elapsed)
+                    m.running[] = false
+                    m.has_results[] = true
+                    m.results_text[] = summary
+                    m.status_text[] = "Done — select outputs on the map."
+                end,
+                on_error = msg -> begin
+                    m.running[] = false
+                    m.status_text[] = occursin("aborted", msg) ? "Optimization aborted." :
+                                      "Error: " * first(msg, 400)
+                end)
+            if started
+                running = true
+                has_results = false
+                status_text = gamma > beta && !annealing ?
+                    "Solving (note: gamma > beta is non-convex — consider annealing)..." :
+                    "Solving — see console for solver output..."
+            else
+                status_text = "Could not start: no valid network loaded."
+            end
         end
     end
 end
@@ -325,12 +331,31 @@ info_icon(key::String) = Html.span("", class = "info-icon", data__info = key,
 field_row(label::String, key::String) =
     Html.div(class = "field-row", [Html.span(label, class = "field-label"), info_icon(key)])
 
+"Compact parameter input: name on the left, unlabeled number field on the right."
+pfield(label::String, field::Symbol; step::String = "1") =
+    Html.div(class = "pfield", [
+        Html.span(label, class = "pfield-label")
+        # label must be `nothing` (not ""): a bare `label` attr makes Quasar
+        # reserve floating-label space above the value
+        numberfield(nothing, field, dense = true, outlined = true, dark = true, step = step)
+    ])
+
 function ui()
     [
-        h4("Transport Network Optimizer", class = "app-title")
         Html.div(class = "subtitle-row", [
-            p("Optimal transport networks in spatial equilibrium — Fajgelbaum & Schaal (2020)",
-              class = "app-subtitle")
+            Html.p(class = "app-subtitle", [
+                "Optimal transport networks in spatial equilibrium — ",
+                Html.a("Fajgelbaum & Schaal (2020)",
+                       href = "https://onlinelibrary.wiley.com/doi/full/10.3982/ECTA15213",
+                       target = "_blank", rel = "noopener noreferrer", class = "app-subtitle-link"),
+                " — Implemented in ",
+                Html.a("Julia",
+                       href = "https://github.com/OptimalTransportNetworks/OptimalTransportNetworks.jl",
+                       target = "_blank", rel = "noopener noreferrer", class = "app-subtitle-link"),
+                " by ",
+                Html.a("Sebastian Krantz", href = "https://sebastiankrantz.com/",
+                       target = "_blank", rel = "noopener noreferrer", class = "app-subtitle-link"),
+            ])
             info_icon("guide")
         ])
 
@@ -375,30 +400,30 @@ function ui()
 
         field_row("Model Parameters", "params")
         Html.div(class = "param-grid", [
-            numberfield("alpha", :alpha, dense = true, outlined = true, dark = true, step = "0.05")
-            numberfield("beta", :beta, dense = true, outlined = true, dark = true, step = "0.1")
-            numberfield("gamma", :gamma, dense = true, outlined = true, dark = true, step = "0.1")
-            numberfield("rho", :rho, dense = true, outlined = true, dark = true, step = "0.5")
+            pfield("alpha", :alpha, step = "0.05")
+            pfield("beta", :beta, step = "0.1")
+            pfield("gamma", :gamma, step = "0.1")
+            pfield("rho", :rho, step = "0.5")
         ])
 
         field_row("Infrastructure Budget (K)", "budget")
-        numberfield("", :K, dense = true, outlined = true, dark = true)
+        numberfield(nothing, :K, dense = true, outlined = true, dark = true)
         p(@text(:budget_text), class = "budget-text", @iif(:budget_text))
 
         field_row("Solver Controls", "solver")
         Html.div(class = "param-grid", [
-            numberfield("tol", :tol, dense = true, outlined = true, dark = true)
-            numberfield("min_iter", :min_iter, dense = true, outlined = true, dark = true, step = "1")
-            numberfield("max_iter", :max_iter, dense = true, outlined = true, dark = true, step = "1")
+            pfield("tol", :tol)
+            pfield("min_iter", :min_iter)
+            pfield("max_iter", :max_iter)
         ])
 
         expansionitem(label = "Advanced options", dense = true, dense__toggle = true, dark = true,
                       class = "advanced", header__class = "advanced-header", [
             Html.div(class = "adv-inner", [
                 Html.div(class = "param-grid", [
-                    numberfield("sigma", :sigma, dense = true, outlined = true, dark = true, step = "0.5")
-                    numberfield("a", :a, dense = true, outlined = true, dark = true, step = "0.05")
-                    numberfield("nu", :nu, dense = true, outlined = true, dark = true, step = "0.5")
+                    pfield("sigma", :sigma, step = "0.5")
+                    pfield("a", :a, step = "0.05")
+                    pfield("nu", :nu, step = "0.5")
                 ])
                 toggle("Labor mobility", :labor_mobility, dense = true, dark = true, size = "sm")
                 toggle("Cross-good congestion", :cross_good_congestion, dense = true, dark = true, size = "sm")
@@ -408,16 +433,22 @@ function ui()
                 toggle("Full Ipopt output in console", :solver_verbose, dense = true, dark = true, size = "sm")
                 toggle("Allow downgrading (lower bound 0)", :allow_downgrade, dense = true, dark = true, size = "sm")
                 toggle("Productivity floor (Zjn ≥ 1e-3, all goods)", :productivity_floor, dense = true, dark = true, size = "sm")
-                StippleUI.Selects.select(:linear_solver, options = ["mumps", "ma57", "ma86"],
-                                         label = "Ipopt linear solver",
+                field_row("Ipopt linear solver", "linear-solver")
+                # popup__content__class: the options menu portals to <body>, outside
+                # the dark sidebar — style it explicitly or the items render white-on-white
+                StippleUI.Selects.select(:linear_solver,
+                                         options = ["ma27", "ma57", "ma77", "ma86", "ma97", "mumps"],
                                          dense = true, outlined = true, dark = true, options__dense = true,
-                                         title = "ma57/ma86 require a licensed HSL library (auto-detected; falls back to MUMPS)")
+                                         popup__content__class = "solver-menu")
                 Html.div(class = "adv-info", [Html.span("Details on the advanced options", class = "adv-info-text"), info_icon("advanced")])
             ])
         ])
 
-        btn("Run Optimization", @click(:run), color = "primary", class = "run-btn", nocaps = true,
-            icon = "play_arrow", loading = :running, disable! = "running || !has_network")
+        btn(nothing, @click(:run), class = "run-btn", nocaps = true,
+            label! = "running ? 'Abort Optimization' : 'Run Optimization'",
+            color! = "running ? 'negative' : 'primary'",
+            icon! = "running ? 'stop' : 'play_arrow'",
+            disable! = "!has_network && !running")
         p(@text(:status_text), class = "status-line")
 
         Html.div(@iif(:has_results), class = "results-box", [
@@ -441,39 +472,60 @@ const APP_LAYOUT = """
     <% Stipple.sesstoken() %>
     <title>Optimal Transport Networks</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-    <link rel="stylesheet" href="/css/app.css?v=5">
+    <link rel="stylesheet" href="/css/app.css?v=15">
     <style>[v-cloak] { display: none; }</style>
     <% join(Stipple.Layout.theme(), "\\n    ") %>
   </head>
   <body>
     <div id="otn-shell">
       <div id="otn-sidebar">
-        <div id="sidebar-topbtns">
-          <button id="sidebar-collapse" title="Collapse sidebar">&#8249;</button>
-        </div>
         <div id="sidebar-scroll">
+          <div class="sidebar-header">
+            <h4 class="app-title">Transport Network Optimizer</h4>
+            <button id="sidebar-collapse" type="button" class="sidebar-toggle-btn" title="Collapse sidebar" aria-label="Collapse sidebar">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path d="M9 2 L4 7 L9 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
           <% Stipple.page(model, partial = true, v__cloak = true, [Stipple.Genie.Renderer.Html.@yield], Stipple.@if(:isready)) %>
         </div>
       </div>
       <div id="otn-main">
         <div id="map"></div>
-        <button id="sidebar-reopen" class="hidden" title="Show sidebar">&#8250;</button>
+        <button id="sidebar-reopen" type="button" class="hidden sidebar-toggle-btn" title="Show sidebar" aria-label="Show sidebar">
+          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+            <path d="M5 2 L10 7 L5 12" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
         <div id="map-topright">
-          <div class="map-card" id="basemap-card">
-            <select id="basemap-select" title="Basemap"></select>
-          </div>
           <div class="map-card hidden" id="layers-card">
-            <div class="layer-row">
+            <div class="layer-grid">
+              <span class="lg-head"></span>
+              <span class="lg-head"></span>
+              <span class="lg-head">Colour</span>
+              <span class="lg-head">Map</span>
+              <span class="lg-head">Size</span>
+              <span class="lg-head">Trans</span>
+
               <input type="checkbox" id="edges-visible" checked>
               <label for="edges-visible">Edges</label>
-              <select id="edge-metric" title="Edge output to visualize"></select>
-            </div>
-            <div class="layer-row">
+              <select id="edge-metric" title="Edge variable determining the colour"></select>
+              <select id="edge-cmap" class="cmap-select" title="Colour map"></select>
+              <select id="edge-sizevar" class="size-select" title="Edge variable determining the segment width"></select>
+              <select id="edge-transform" class="transform-select" title="Transformation applied to the size variable"></select>
+
               <input type="checkbox" id="nodes-visible" checked>
               <label for="nodes-visible">Nodes</label>
-              <select id="node-metric" title="Node output to visualize"></select>
+              <select id="node-metric" title="Node variable determining the colour"></select>
+              <select id="node-cmap" class="cmap-select" title="Colour map"></select>
+              <select id="node-sizevar" class="size-select" title="Node variable determining the circle size"></select>
+              <select id="node-transform" class="transform-select" title="Transformation applied to the size variable"></select>
             </div>
             <div id="map-summary"></div>
+          </div>
+          <div class="map-card" id="basemap-card">
+            <select id="basemap-select" title="Basemap"></select>
           </div>
           <div class="map-card" id="zoom-card">
             <button id="zoom-in" title="Zoom in">+</button>
@@ -505,7 +557,7 @@ const APP_LAYOUT = """
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-providers@2.0.0/leaflet-providers.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
-    <script src="/js/map.js?v=3"></script>
+    <script src="/js/map.js?v=8"></script>
   </body>
 </html>
 """

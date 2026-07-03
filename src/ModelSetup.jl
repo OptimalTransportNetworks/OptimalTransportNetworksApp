@@ -58,8 +58,31 @@ function budget_stats(edges::DataFrame)
     return (K_base = K_base, K_max = K_max)
 end
 
-"Locate a usable (non-stub) HSL library for Ipopt's ma57/ma86 linear solvers."
+# Licensed HSL linear solvers (ma27/ma57/ma77/ma86/ma97) for Ipopt.
+# HSL_jll.jl is not a registered package — it comes with the libHSL download from
+# https://licences.stfc.ac.uk/product/libhsl-2023_11_7 (free academic licence) and is
+# typically `Pkg.develop`ed into the default environment, which is on the LOAD_PATH.
+# Import it from there if present; otherwise fall back to scanning for a library.
+const HSL_IMPORT_ERROR = Ref{Any}(nothing)
+const HSL_JLL = try
+    @eval import HSL_jll
+    HSL_jll
+catch err
+    HSL_IMPORT_ERROR[] = err
+    nothing
+end
+if HSL_JLL === nothing
+    @info "HSL_jll not loadable — HSL solvers (ma27/ma57/...) fall back to MUMPS unless OTN_HSL_LIB points to a libhsl. Reason: $(sprint(showerror, HSL_IMPORT_ERROR[]))"
+else
+    @info "HSL_jll loaded: $(HSL_JLL.libhsl_path)"
+end
+
+"Locate a usable (non-stub) HSL library for Ipopt's ma27/ma57/ma77/ma86/ma97 solvers."
 function find_hsl_lib()
+    # trust HSL_jll's own path unconditionally (no filesize heuristic)
+    if HSL_JLL !== nothing && isfile(HSL_JLL.libhsl_path)
+        return HSL_JLL.libhsl_path
+    end
     candidates = String[]
     haskey(ENV, "OTN_HSL_LIB") && push!(candidates, ENV["OTN_HSL_LIB"])
     push!(candidates, "/usr/local/lib/libhsl.dylib", "/opt/homebrew/lib/libhsl.dylib")
@@ -107,12 +130,15 @@ function build_model(nodes::DataFrame, edges::DataFrame, p::NamedTuple)
     Lj = Float64.(nodes.population)
     Hj = hasproperty(nodes, :housing) ? Float64.(nodes.housing) : Lj .* (1 - p.alpha)
 
-    solver = get(p, :linear_solver, "mumps")
+    solver = lowercase(get(p, :linear_solver, "ma57"))
     if solver != "mumps"
         lib = find_hsl_lib()
         if lib === nothing
             println("[app] HSL library not found — falling back to MUMPS. ",
-                    "Set OTN_HSL_LIB or install libhsl to use $solver.")
+                    "Install HSL_jll (libHSL from licences.stfc.ac.uk) or set OTN_HSL_LIB to use $solver.")
+            HSL_IMPORT_ERROR[] === nothing ||
+                println("[app] `import HSL_jll` failed with: ",
+                        first(sprint(showerror, HSL_IMPORT_ERROR[]), 600))
         else
             println("[app] Using HSL $solver via $lib")
             param[:optimizer_attr] = Dict(:hsllib => lib, :linear_solver => solver)

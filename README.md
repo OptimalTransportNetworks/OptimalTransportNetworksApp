@@ -7,9 +7,13 @@ transport network simulations with
 interactive map visualization of the results.
 
 Layout: dark collapsible sidebar (uploads, parameters, Run button, results) on
-the left; map panel with a basemap dropdown, layer/output controls, translucent
-legends, and a solver console on the right. ⓘ icons and the **Guide** button
-explain every field without cluttering the UI.
+the left; map panel on the right with a basemap dropdown and a layers panel
+controlling, per layer (edges/nodes), the colour variable, colour map, size
+variable, and a transformation (level/log/log10/sqrt/…) applied to the scale.
+Uploaded nodes or edges are visualized immediately (edges-only requires a WKT
+`geometry` column). Live solver output streams into a console at the bottom of
+the map, and a running optimization can be aborted from the Run button.
+ⓘ icons explain every field without cluttering the UI.
 
 ## Quick start
 
@@ -66,7 +70,7 @@ Two datasets are bundled:
   hypothetical links): infrastructure = average speed in km/h, upgrade costs per
   km/h up to a 90 km/h cap, and Graff (2024) iceberg trade costs.
   **Load CEMAC network** also applies the study's calibration (alpha 0.7,
-  gamma 1.2, sigma 3.8, a 1, rho 2, cross-good congestion, duality). Regenerate
+  gamma 1.2, sigma 3.8, a 1, rho 0, cross-good congestion, duality). Regenerate
   with `julia --project=. data/CEMAC/generate_cemac.jl` (requires the
   OptimalCEMACRoads data locally).
 
@@ -94,7 +98,24 @@ allocation on the *existing* network first, like the research workflows).
 
 The verbose output of `optimal_network()` (outer-loop iterations, and the full
 Ipopt log if "Full Ipopt output" is toggled) streams into a console panel at the
-bottom of the map while the solver runs.
+bottom of the map while the solver runs. While a solve is running the Run button
+turns into **Abort Optimization**, which stops Ipopt cooperatively at the next
+iteration (via an intermediate callback in OptimalTransportNetworks.jl).
+
+## Ipopt linear solver (HSL)
+
+The default linear solver is HSL **ma57**; `ma27`/`ma77`/`ma86`/`ma97` and the
+bundled open-source `mumps` are selectable under Advanced options. The `ma*`
+solvers are substantially faster and more robust on large problems (MUMPS tends
+to stall on CEMAC-scale multi-good networks) but require
+[Coin-HSL](https://licences.stfc.ac.uk/product/coin-hsl) (free academic
+licence): download [libHSL](https://licences.stfc.ac.uk/product/libhsl-2023_11_7),
+which ships the Julia package `HSL_jll.jl`, and install it with
+`Pkg.develop(path="…/HSL_jll.jl-2023.11.7")` (see
+[HSL.jl](https://github.com/JuliaSmoothOptimizers/HSL.jl)). The app picks it up
+from any environment on the load path (e.g. the default `@v1.x` environment), or
+from `OTN_HSL_LIB` / `/usr/local/lib/libhsl.dylib`. If no usable HSL library is
+found the run falls back to MUMPS with a note in the console.
 
 ## Basemaps
 
@@ -119,15 +140,14 @@ plugin with an API key, or remove those two entries in `public/js/map.js`.
 - `public/js/map.js` — Leaflet module (outside the Vue-managed DOM); polls
   `/api/version` and fetches `/api/mapdata` + `/api/console` incrementally.
 
-Limitations (by design, v1): single user, one solve at a time, no cancel button
-(killing Ipopt mid-solve is unsafe — restart the app if needed), partial labor
+Limitations (by design, v1): single user, one solve at a time, partial labor
 mobility (region-based) not exposed.
 
 ## Testing
 
 ```bash
-julia -t auto,1 --project=. test/headless_test.jl
+julia -t auto,1 --project=. test/headless_test.jl     # parse → validate → solve → outputs
+julia -t auto,1 --project=. test/app_test.jl          # button-driven app flow (load → run → results)
+julia -t auto,1 --project=. test/stream_abort_test.jl # live console streaming + abort latency
+julia -t auto,1 --project=. test/cemac_solve_test.jl  # opt-in research-scale CEMAC solve (long)
 ```
-
-runs the full pipeline (parse → validate → solve → outputs) on the example
-network, including budget/bounds checks.
