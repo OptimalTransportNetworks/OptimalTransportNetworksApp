@@ -472,7 +472,7 @@ const APP_LAYOUT = """
     <% Stipple.sesstoken() %>
     <title>Optimal Transport Networks</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-    <link rel="stylesheet" href="/css/app.css?v=19">
+    <link rel="stylesheet" href="/css/app.css?v=20">
     <style>[v-cloak] { display: none; }</style>
     <% join(Stipple.Layout.theme(), "\\n    ") %>
   </head>
