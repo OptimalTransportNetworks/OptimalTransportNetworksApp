@@ -293,7 +293,18 @@ html, body {
   border: 1px solid var(--sb-border);
   border-radius: 6px;
 }
-.advanced-header { font-size: 0.84rem; color: var(--sb-text); }
+.advanced .q-item { min-height: 36px; padding: 0 12px; }
+.advanced .q-item:hover,
+.advanced.q-expansion-item--expanded > .q-expansion-item__container > .q-item {
+  background: rgba(55, 65, 81, 0.55);
+}
+.advanced .advanced-header,
+.advanced .q-item__label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--sb-text);
+}
+.advanced .q-focus-helper { display: none; } /* avoid Quasar ripple overlay on dark header */
 .adv-inner { padding: 4px 12px 10px 12px; }
 .adv-inner .param-grid { margin-bottom: 8px; }
 .adv-info {
@@ -581,8 +592,9 @@ html, body {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 34%;
-  min-height: 140px;
+  height: var(--console-height, 34%);
+  min-height: 120px;
+  max-height: 85%;
   z-index: 1100;
   background: rgba(17, 24, 39, 0.96);
   color: #d1d5db;
@@ -599,6 +611,8 @@ html, body {
   padding: 5px 12px;
   background: var(--sb-box);
   font-size: 0.78rem;
+  cursor: ns-resize;
+  touch-action: none;
 }
 .console-title { font-weight: 600; color: #fff; }
 #console-status { color: #60a5fa; font-style: italic; }

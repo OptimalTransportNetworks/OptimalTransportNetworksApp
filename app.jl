@@ -417,7 +417,7 @@ function ui()
             pfield("max_iter", :max_iter)
         ])
 
-        expansionitem(label = "Advanced options", dense = true, dense__toggle = true, dark = true,
+        expansionitem(label = "Advanced Options", dense = true, dense__toggle = true, dark = true,
                       class = "advanced", header__class = "advanced-header", [
             Html.div(class = "adv-inner", [
                 Html.div(class = "param-grid", [
@@ -472,7 +472,7 @@ const APP_LAYOUT = """
     <% Stipple.sesstoken() %>
     <title>Optimal Transport Networks</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
-    <link rel="stylesheet" href="/css/app.css?v=15">
+    <link rel="stylesheet" href="/css/app.css?v=19">
     <style>[v-cloak] { display: none; }</style>
     <% join(Stipple.Layout.theme(), "\\n    ") %>
   </head>
@@ -534,8 +534,8 @@ const APP_LAYOUT = """
         </div>
         <div id="legend" class="hidden"></div>
         <div id="console-panel" class="hidden">
-          <div id="console-header">
-            <span class="console-title">Solver output</span>
+          <div id="console-header" title="Drag to resize">
+            <span class="console-title">Solver Output</span>
             <span id="console-status"></span>
             <span style="flex:1"></span>
             <button id="console-copy" title="Copy to clipboard">copy</button>
@@ -557,7 +557,7 @@ const APP_LAYOUT = """
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-providers@2.0.0/leaflet-providers.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
-    <script src="/js/map.js?v=8"></script>
+    <script src="/js/map.js?v=11"></script>
   </body>
 </html>
 """

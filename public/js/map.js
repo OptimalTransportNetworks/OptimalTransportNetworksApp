@@ -136,7 +136,7 @@
         '<div class="note">Progress appears in the console and next to the Run button.</div>'
     },
     advanced: {
-      title: 'Advanced options',
+      title: 'Advanced Options',
       html: '<h4>sigma (σ)</h4><p>Elasticity of substitution across goods in the CES ' +
         'consumption aggregate:</p>' +
         '<div class="eq">c<sub>j</sub> = ( Σ<sub>n</sub> (c<sub>j</sub><sup>n</sup>)' +
@@ -552,6 +552,78 @@
     S.consoleOpen = open;
     document.getElementById('console-panel').classList.toggle('hidden', !open);
     document.getElementById('console-reopen').classList.toggle('hidden', open || S.consoleCursor === 0);
+    setTimeout(function () { if (S.map) S.map.invalidateSize(); }, 0);
+  }
+
+  function initConsoleResize() {
+    var panel = document.getElementById('console-panel');
+    var handle = document.getElementById('console-header');
+    var main = document.getElementById('otn-main');
+    if (!panel || !handle || !main) return;
+
+    var saved = localStorage.getItem('otn-console-height');
+    if (saved) panel.style.height = saved;
+
+    function clampHeight(px) {
+      var minH = 120;
+      var maxH = Math.round(main.clientHeight * 0.85);
+      return Math.max(minH, Math.min(maxH, px));
+    }
+
+    function setHeight(px, persist) {
+      px = clampHeight(px);
+      panel.style.height = px + 'px';
+      if (persist !== false) localStorage.setItem('otn-console-height', px + 'px');
+      if (S.map) S.map.invalidateSize();
+    }
+
+    var dragging = false;
+    var startY = 0;
+    var startH = 0;
+
+    function onMove(clientY) {
+      if (!dragging) return;
+      setHeight(startH + (startY - clientY));
+    }
+
+    function stopDrag() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    function startDrag(clientY) {
+      dragging = true;
+      startY = clientY;
+      startH = panel.offsetHeight;
+      document.body.style.cursor = 'ns-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    handle.addEventListener('mousedown', function (e) {
+      if (e.target.closest('button')) return;
+      startDrag(e.clientY);
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', function (e) { onMove(e.clientY); });
+    document.addEventListener('mouseup', stopDrag);
+
+    handle.addEventListener('touchstart', function (e) {
+      if (e.target.closest('button') || !e.touches.length) return;
+      startDrag(e.touches[0].clientY);
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('touchmove', function (e) {
+      if (!dragging || !e.touches.length) return;
+      onMove(e.touches[0].clientY);
+      e.preventDefault();
+    }, { passive: false });
+    document.addEventListener('touchend', stopDrag);
+
+    window.addEventListener('resize', function () {
+      if (panel.style.height) setHeight(panel.offsetHeight, false);
+    });
   }
 
   function appendConsole(lines) {
@@ -703,6 +775,7 @@
     on('sidebar-reopen', 'click', function () { setSidebar(true); });
 
     // console
+    initConsoleResize();
     on('console-close', 'click', function () { setConsoleOpen(false); });
     on('console-reopen', 'click', function () { setConsoleOpen(true); });
     on('console-copy', 'click', function () {
