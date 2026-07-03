@@ -597,7 +597,7 @@ html, body {
   min-height: 120px;
   max-height: 85%;
   z-index: 1100;
-  background: rgba(17, 24, 39, 0.95);
+  background: rgba(17, 24, 39, 0.96);
   color: #d1d5db;
   display: flex;
   flex-direction: column;
