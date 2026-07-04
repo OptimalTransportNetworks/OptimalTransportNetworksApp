@@ -246,6 +246,7 @@
       'OpenTopoMap': P('OpenTopoMap'),
       'Esri WorldStreetMap': P('Esri.WorldStreetMap'),
       'Esri WorldTopoMap': P('Esri.WorldTopoMap'),
+      'Esri WorldGreyCanvas': P('Esri.WorldGrayCanvas'),
       'Esri WorldImagery': P('Esri.WorldImagery'),
       'Google Maps': googleLayer('m'),
       'Google Terrain': googleLayer('p')
@@ -363,9 +364,47 @@
     return String(parseFloat(v.toPrecision(4)));
   }
 
+  // Preferred field order for popups. Anything not listed here sorts after these,
+  // in natural order (so Qjk_2 precedes Qjk_10 and Cj/Cj_orig/Cj_gain_pct group).
+  var POPUP_ORDER = [
+    // identity
+    'from', 'to', 'node', 'name', 'product',
+    // node fundamentals
+    'population', 'Lj', 'Lj_orig', 'productivity',
+    'Yj', 'Yj_orig',
+    'Cj', 'Cj_orig', 'Cj_gain_pct',
+    'cj', 'cj_orig', 'cj_gain_pct',
+    'PCj', 'PCj_orig', 'PCj_gain_pct',
+    'uj', 'uj_orig', 'uj_gain_pct',
+    // edge fundamentals
+    'Ijk', 'Ijk_orig', 'increase', 'perc_upgraded',
+    'delta_i', 'delta_tau',
+    'Qjk_total'
+  ];
+
+  function naturalCmp(a, b) {
+    var ax = a.match(/(\d+|\D+)/g) || [], bx = b.match(/(\d+|\D+)/g) || [];
+    var n = Math.min(ax.length, bx.length);
+    for (var i = 0; i < n; i++) {
+      if (ax[i] === bx[i]) continue;
+      var an = parseInt(ax[i], 10), bn = parseInt(bx[i], 10);
+      if (!isNaN(an) && !isNaN(bn)) return an - bn;
+      return ax[i] < bx[i] ? -1 : 1;
+    }
+    return ax.length - bx.length;
+  }
+
+  function popupKeyCmp(a, b) {
+    var ra = POPUP_ORDER.indexOf(a), rb = POPUP_ORDER.indexOf(b);
+    if (ra === -1) ra = POPUP_ORDER.length;
+    if (rb === -1) rb = POPUP_ORDER.length;
+    if (ra !== rb) return ra - rb;
+    return naturalCmp(a, b);
+  }
+
   function popupHtml(props, title) {
     var rows = '';
-    Object.keys(props).forEach(function (k) {
+    Object.keys(props).sort(popupKeyCmp).forEach(function (k) {
       if (props[k] === null || props[k] === undefined) return;
       rows += '<tr><td>' + k + '</td><td>' + fmt(props[k]) + '</td></tr>';
     });

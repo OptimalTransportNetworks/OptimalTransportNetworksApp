@@ -390,7 +390,7 @@ function ui()
         Html.div(class = "btn-row", [
             btn("Load example", @click(:load_example), size = "sm", flat = true, nocaps = true,
                 class = "ghost-btn", title = "Small synthetic 30-node network")
-            btn("Load CEMAC network", @click(:load_cemac), size = "sm", flat = true, nocaps = true,
+            btn("Load CEMAC network – Krantz & Bougna", @click(:load_cemac), size = "sm", flat = true, nocaps = true,
                 class = "ghost-btn", title = "Real CEMAC road network (196 cities, 20 goods) with the study's calibration")
         ])
         p(@text(:net_summary), class = "net-summary", @iif(:net_summary))
@@ -470,7 +470,12 @@ const APP_LAYOUT = """
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <% Stipple.sesstoken() %>
-    <title>Optimal Transport Networks</title>
+    <title>Transport Network Optimizer</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
     <link rel="stylesheet" href="/css/app.css?v=20">
     <style>[v-cloak] { display: none; }</style>
@@ -557,7 +562,7 @@ const APP_LAYOUT = """
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/leaflet-providers@2.0.0/leaflet-providers.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chroma-js@2.4.2/chroma.min.js"></script>
-    <script src="/js/map.js?v=14"></script>
+    <script src="/js/map.js?v=15"></script>
   </body>
 </html>
 """

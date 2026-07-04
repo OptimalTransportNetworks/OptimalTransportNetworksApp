@@ -24,6 +24,11 @@ const SRC = "/Users/sebastiankrantz/Documents/World Bank/OptimalCEMACRoads/data/
 edges = CSV.read(joinpath(SRC, "graph_orig_MACR_90kmh_google.csv"), DataFrame)
 nodes = CSV.read(joinpath(SRC, "graph_nodes_MACR_90kmh_google.csv"), DataFrame)
 
+# Real (routed) edge shapes, simplified with rmapshaper::ms_simplify(keep = 0.1)
+# and exported to WKT LINESTRINGs by the R side (edges_real_simplified.qs ->
+# csv/edges_real_simplified_geometry.csv, keyed by the same from/to node indices).
+geom = CSV.read(joinpath(SRC, "edges_real_simplified_geometry.csv"), DataFrame)
+
 # --- nodes -------------------------------------------------------------------
 population = nodes.population ./ 1000                    # thousands
 outflows = nodes.outflows ./ 1000
@@ -61,6 +66,11 @@ delta_i = total_cost ./ (Iu .- Ijk)
 delta_i[(Iu .- Ijk) .< 1e-4 .|| .!isfinite.(delta_i)] .= 0.0
 delta_tau = max.(0.1158826 .* log.(dist_km ./ 1.609), 0.0)
 
+# Match WKT geometry to each edge by (from, to) — same node indexing, order-independent
+geom_lookup = Dict((r.from, r.to) => r.geometry for r in eachrow(geom))
+geometry = [get(geom_lookup, (f, t), missing) for (f, t) in zip(edges.from, edges.to)]
+@assert !any(ismissing, geometry) "some edges have no matching geometry"
+
 edges_out = DataFrame(
     from = edges.from,
     to = edges.to,
@@ -68,7 +78,8 @@ edges_out = DataFrame(
     delta_tau = r6.(delta_tau),
     Ijk = r6.(Ijk),
     Il = r6.(Ijk),                                       # no downgrading
-    Iu = r6.(Iu))
+    Iu = r6.(Iu),
+    geometry = geometry)
 
 # --- checks & write ----------------------------------------------------------
 J = nrow(nodes_out)

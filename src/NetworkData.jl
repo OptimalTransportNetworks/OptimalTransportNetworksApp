@@ -84,7 +84,7 @@ function parse_nodes(data::Vector{UInt8})
             coerce_float!(errors, df, "housing")
         end
     else
-        push!(warnings, "No 'housing' column — using population × (1 − alpha) as the housing supply Hj.")
+        push!(warnings, "No 'housing' column — using population × (1 − alpha) as Hj.")
     end
     if "product" in cols
         coerce_int!(errors, df, "product")

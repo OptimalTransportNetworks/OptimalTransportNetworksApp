@@ -66,7 +66,7 @@ Two datasets are bundled:
 - `data/example/` — a small synthetic 30-node network (**Load example**);
   regenerate with `julia data/example/generate_example.jl`.
 - `data/CEMAC/` — the **real CEMAC road network** from the OptimalCEMACRoads
-  study (196 city nodes, 313 edges, 20 goods; existing network only, no
+  study by Krantz & Bougna (2026) (196 city nodes, 313 edges, 20 goods; existing network only, no
   hypothetical links): infrastructure = average speed in km/h, upgrade costs per
   km/h up to a 90 km/h cap, and Graff (2024) iceberg trade costs.
   **Load CEMAC network** also applies the study's calibration (alpha 0.7,
