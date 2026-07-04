@@ -2,6 +2,9 @@
 app = "optimaltransportnetworksapp"
 primary_region = "fra"
 
+# Headroom for transient compile spikes at first boot.
+swap_size_mb = 1024
+
 [build]
   dockerfile = "Dockerfile"
 
@@ -18,14 +21,10 @@ primary_region = "fra"
   auto_start_machines = true
   min_machines_running = 0
 
-  [[http_service.checks]]
-    # Julia cold boot (package load + first compile) takes 1-2 min:
-    # give it a generous grace period before health checks count.
-    grace_period = "180s"
-    interval = "30s"
-    timeout = "5s"
-    method = "GET"
-    path = "/"
+# No HTTP health check on purpose: Fly clamps http_service check grace periods
+# to 60s, which Julia's cold boot (package load on shared vCPUs) cannot meet,
+# so checks fail and the deploy is marked failed. Without a check, fly-proxy
+# routes traffic as soon as the app binds 0.0.0.0:8080.
 
 [[vm]]
   size = "shared-cpu-2x"

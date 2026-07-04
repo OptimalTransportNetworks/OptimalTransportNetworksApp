@@ -15,7 +15,16 @@ RUN git clone https://github.com/OptimalTransportNetworks/OptimalTransportNetwor
 WORKDIR /app
 
 COPY Project.toml Manifest.toml ./
+
+# Cap parallel precompile jobs: the remote builder OOM-kills workers when ~10
+# heavy packages (JuMP, Stipple, Plots, ...) compile at once, leaving silent
+# cache gaps (DataFrames failed this way) that the machine then has to
+# recompile on every cold boot.
+ENV JULIA_NUM_PRECOMPILE_TASKS=4
 RUN julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+# Load the full stack once: retries any precompile that failed above (serially,
+# low memory) and FAILS THE BUILD if the app's packages cannot actually load.
+RUN julia --project=. -e 'using GenieFramework, Genie, DataFrames, CSV, JSON3, OptimalTransportNetworks; println("LOAD-OK")'
 
 COPY . .
 
