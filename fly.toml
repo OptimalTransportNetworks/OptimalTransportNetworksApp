@@ -1,31 +1,26 @@
-# fly.toml — deploy with: fly launch --copy-config  (or fly deploy once created)
-app = "optimaltransportnetworksapp"
-primary_region = "fra"
+# fly.toml app configuration file generated for optimaltransportnetworksapp on 2026-07-04T02:30:37Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-# Headroom for transient compile spikes at first boot.
+app = 'optimaltransportnetworksapp'
+primary_region = 'cdg'
 swap_size_mb = 1024
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  OTN_HOST = "0.0.0.0"
-  OTN_PORT = "8080"
+  OTN_HOST = '0.0.0.0'
+  OTN_PORT = '8080'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # suspend keeps the booted Julia process in memory -> near-instant wake;
-  # if flyctl rejects suspend for this VM size, fall back to "stop".
-  auto_stop_machines = "suspend"
+  auto_stop_machines = 'suspend'
   auto_start_machines = true
   min_machines_running = 0
 
-# No HTTP health check on purpose: Fly clamps http_service check grace periods
-# to 60s, which Julia's cold boot (package load on shared vCPUs) cannot meet,
-# so checks fail and the deploy is marked failed. Without a check, fly-proxy
-# routes traffic as soon as the app binds 0.0.0.0:8080.
-
 [[vm]]
-  size = "shared-cpu-2x"
-  memory = "2gb"
+  size = 'shared-cpu-2x'
+  memory = '2gb'
