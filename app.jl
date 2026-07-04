@@ -612,6 +612,7 @@ Genie.config.log_requests = false # request logs would pollute the captured solv
 
 if get(ENV, "OTN_NO_SERVER", "0") != "1" # gate for tests that drive the app in-process
     port = something(tryparse(Int, get(ENV, "OTN_PORT", "8000")), 8000)
+    host = get(ENV, "OTN_HOST", "127.0.0.1") # containers must bind 0.0.0.0
     @info "Optimal Transport Networks app → http://localhost:$port  (threads: $(Threads.nthreads()) default, $(Threads.nthreads(:interactive)) interactive)"
-    Genie.up(port, "127.0.0.1"; async = false)
+    Genie.up(port, host; async = false)
 end

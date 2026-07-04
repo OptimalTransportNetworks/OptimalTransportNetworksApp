@@ -1,0 +1,32 @@
+# fly.toml — deploy with: fly launch --copy-config  (or fly deploy once created)
+app = "optimaltransportnetworksapp"
+primary_region = "fra"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  OTN_HOST = "0.0.0.0"
+  OTN_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # suspend keeps the booted Julia process in memory -> near-instant wake;
+  # if flyctl rejects suspend for this VM size, fall back to "stop".
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    # Julia cold boot (package load + first compile) takes 1-2 min:
+    # give it a generous grace period before health checks count.
+    grace_period = "180s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/"
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

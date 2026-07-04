@@ -1,0 +1,10 @@
+.git
+misc/
+test/
+PLAN.md
+README.md
+Dockerfile
+fly.toml
+*.log
+nohup.out
+.DS_Store
