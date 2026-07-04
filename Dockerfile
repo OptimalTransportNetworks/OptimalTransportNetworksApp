@@ -21,6 +21,12 @@ COPY Project.toml Manifest.toml ./
 # cache gaps (DataFrames failed this way) that the machine then has to
 # recompile on every cold boot.
 ENV JULIA_NUM_PRECOMPILE_TASKS=4
+
+# Without this, pkgimages are compiled for the BUILDER's native CPU; the Fly
+# machine (different microarch) then rejects every cache and recompiles all
+# ~290 packages on boot. This is the portable multi-target string the official
+# Julia x86_64 binaries use — set for build AND runtime so caches match.
+ENV JULIA_CPU_TARGET="generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
 RUN julia --project=. -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
 # Load the full stack once: retries any precompile that failed above (serially,
 # low memory) and FAILS THE BUILD if the app's packages cannot actually load.
