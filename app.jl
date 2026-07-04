@@ -165,7 +165,7 @@ function set_cemac_calibration!(m)
     m.sigma[] = 3.8 # Armington
     m.a[] = 1.0
     m.nu[] = 2.0
-    m.cross_good_congestion[] = true
+    m.cross_good_congestion[] = false
     m.annealing[] = false
     m.duality[] = true
     m.tol[] = 5 # tolerance digits: 1e-5
