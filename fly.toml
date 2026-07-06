@@ -13,6 +13,12 @@ swap_size_mb = 1024
 [env]
   OTN_HOST = '0.0.0.0'
   OTN_PORT = '8080'
+  # HSL library lives on the persistent volume (personal licence — never in the repo/image)
+  OTN_HSL_LIB = '/data/lib/libhsl_subset.so'
+
+[mounts]
+  source = 'hsl_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
