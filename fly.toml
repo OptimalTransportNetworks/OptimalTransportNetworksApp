@@ -4,7 +4,7 @@
 #
 
 app = 'optimaltransportnetworksapp'
-primary_region = 'cdg'
+primary_region = 'ams'  # must match the machine's region: min_machines_running only applies in the primary region
 swap_size_mb = 1024
 
 [build]
@@ -19,7 +19,7 @@ swap_size_mb = 1024
   force_https = true
   auto_stop_machines = 'suspend'
   auto_start_machines = true
-  min_machines_running = 0
+  min_machines_running = 1
 
 [[vm]]
   size = 'shared-cpu-2x'
