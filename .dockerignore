@@ -5,6 +5,11 @@ PLAN.md
 README.md
 Dockerfile
 fly.toml
+docker-compose.yml
+Caddyfile
+.env
+.env.example
+DEPLOY_HOSTINGER.md
 *.log
 nohup.out
 .DS_Store

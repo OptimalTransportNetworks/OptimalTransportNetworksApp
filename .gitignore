@@ -3,3 +3,8 @@ uploads/
 misc/
 *.log
 .DS_Store
+
+# Hostinger/VPS deploy: licensed HSL binary and local domain config
+# (never commit — see DEPLOY_HOSTINGER.md)
+hsl/
+.env

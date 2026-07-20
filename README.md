@@ -151,3 +151,12 @@ julia -t auto,1 --project=. test/app_test.jl          # button-driven app flow (
 julia -t auto,1 --project=. test/stream_abort_test.jl # live console streaming + abort latency
 julia -t auto,1 --project=. test/cemac_solve_test.jl  # opt-in research-scale CEMAC solve (long)
 ```
+
+## Deployment
+
+The `Dockerfile` is host-agnostic. Current deployments:
+
+- **Fly.io** — `fly.toml` (managed proxy/TLS, persistent volume for the HSL library).
+- **Self-managed VPS** (e.g. Hostinger KVM) — `docker-compose.yml` + `Caddyfile`
+  (Docker restart policy + Caddy for TLS/reverse proxy instead of a managed
+  platform). See [DEPLOY_HOSTINGER.md](DEPLOY_HOSTINGER.md).
