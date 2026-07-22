@@ -93,8 +93,8 @@ started = start_solve!(p;
 
 @check started "solve launched"
 
-t0 = time()
-while STATE.running && time() - t0 < 600
+t0 = Base.time()
+while STATE.running && Base.time() - t0 < 600
     sleep(0.5)
 end
 sleep(1.0) # allow on_done to finish

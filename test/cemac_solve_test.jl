@@ -41,8 +41,8 @@ p = (alpha = 0.7, beta = 1.0, gamma = 1.2, rho = 2.0,
      productivity_floor = true, # the study floors the whole Zjn matrix at 1e-3
      linear_solver = get(ENV, "OTN_HSL_LIB", "") == "" && find_hsl_lib() === nothing ? "mumps" : "ma57")
 
-t0 = time()
-last_print = Ref(time())
+t0 = Base.time()
+last_print = Ref(Base.time())
 done_ok = Ref(false)
 err_msg = Ref("")
 
@@ -52,7 +52,7 @@ flush(stdout)
 # NB: stdout is captured by the app's console redirect during the solve, so all
 # progress goes to stderr to reach the terminal/log.
 start_solve!(p;
-    on_progress = (it, dist) -> println(stderr, "[outer] iteration $it, distance $dist, t = $(round(time() - t0, digits = 0)) s"),
+    on_progress = (it, dist) -> println(stderr, "[outer] iteration $it, distance $dist, t = $(round(Base.time() - t0, digits = 0)) s"),
     on_done = (results, baseline, param, mats, elapsed) -> begin
         done_ok[] = true
         println("DONE in $(round(elapsed, digits = 1)) s — welfare $(results[:welfare]) (baseline $(baseline === nothing ? "-" : baseline[:welfare]))")
@@ -63,9 +63,9 @@ start_solve!(p;
 
 while STATE.running
     sleep(5)
-    if time() - last_print[] > 60
-        last_print[] = time()
-        println(stderr, "[status] still solving, t = $(round(time() - t0, digits = 0)) s, " *
+    if Base.time() - last_print[] > 60
+        last_print[] = Base.time()
+        println(stderr, "[status] still solving, t = $(round(Base.time() - t0, digits = 0)) s, " *
                         "console lines: $(length(STATE.console_lines)), " *
                         "last: $(isempty(STATE.console_lines) ? "-" : STATE.console_lines[end])")
     end
