@@ -16,6 +16,7 @@ using DataFrames, CSV, JSON3
 using OptimalTransportNetworks
 import Genie
 import Genie.Renderer.Html
+import Sockets # warm-up issues its own HTTP requests; stdlib, no new dependency
 
 const APP_ROOT = @__DIR__
 
@@ -605,6 +606,136 @@ Genie.Router.route("/api/upload/edges", method = Genie.Router.POST) do
 end
 
 # ---------------------------------------------------------------------------
+# Warm-up
+
+"""
+    warmup!(port)
+
+Compile the hot paths at boot so the first visitor does not pay for them.
+
+Julia compiles on first call, and here that is both expensive and very visible.
+Measured cold on a 4-vCPU VPS versus the same operation once warm:
+
+| first page render     | 44.4 s | 0.09 s |
+| load example network  | 11.1 s | 0.00 s |
+| first optimization    | 32.5 s | 0.30 s |
+
+The actual numerical work is a fraction of a second — nearly all of that first
+minute is compilation. Since the server runs continuously, doing it once at boot
+means real users only ever see the warm numbers.
+
+Runs on a background thread, so the server starts accepting connections at the
+usual time and stays responsive (the interactive thread is untouched) while this
+proceeds. Deliberately does NOT go through `start_solve!`: that redirects stdout
+process-wide and writes the shared console, both of which a client would see.
+"""
+function warmup!(port::Int)
+    t0 = Base.time()
+    step(msg) = @info "[warmup] $msg — $(round(Base.time() - t0, digits = 1)) s"
+
+    # 1. Page render: the single biggest cold cost. Wait for the listener, then
+    #    request the routes a browser hits on first load.
+    #
+    #    Raw sockets rather than Downloads/libcurl on purpose. libcurl aborts a
+    #    transfer that moves <1 byte/s for 20 s, and the very first "/" render is
+    #    ~44 s of compilation before a single byte is written — so it killed
+    #    exactly the request that matters most. A bare TCP connect is also far
+    #    cheaper to retry: polling with Downloads stole enough CPU from the
+    #    starting server to push time-to-listening from 12 s to 39 s.
+    ready = false
+    for _ in 1:240
+        try
+            close(Sockets.connect("127.0.0.1", port))
+            ready = true
+            break
+        catch
+            sleep(0.25)
+        end
+    end
+    ready || (@warn "[warmup] server never came up — skipping"; return)
+    for path in ("/", "/api/mapdata", "/api/console?after=0", "/api/version")
+        try
+            sock = Sockets.connect("127.0.0.1", port)
+            # Connection: close makes the server hang up when done, so a plain
+            # read-to-EOF returns the whole response with no timeout to tune.
+            write(sock, "GET $path HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n")
+            read(sock)
+            close(sock)
+        catch e
+            @warn "[warmup] GET $path failed" exception = e
+        end
+    end
+    step("http routes compiled")
+
+    # 2. CSV -> model -> solve, on throwaway locals. min_iter/max_iter are tiny:
+    #    compiling the iteration body is the cost, running it again is ~2 ms.
+    nodes, _, _ = parse_nodes(read(joinpath(APP_ROOT, "data", "example", "nodes.csv")))
+    edges, geoms, _, _ = parse_edges(read(joinpath(APP_ROOT, "data", "example", "edges.csv")))
+    (nodes === nothing || edges === nothing) && (@warn "[warmup] example data unreadable"; return)
+    validate_network(nodes, edges)
+    step("csv parse + validate compiled")
+
+    bs = budget_stats(edges)
+    p = (alpha = 0.5, beta = 1.0, gamma = 1.0, rho = 0.0, K = bs.K_base * 1.2,
+         tol = 1e-3, min_iter = 1.0, max_iter = 2.0,
+         sigma = 5.0, a = 0.8, nu = 2.0,
+         labor_mobility = false, cross_good_congestion = false,
+         annealing = false, duality = true, compute_baseline = true,
+         solver_verbose = false, allow_downgrade = false,
+         productivity_floor = true, linear_solver = "ma57")
+
+    param, graph, mats = build_model(nodes, edges, p)
+    bparam = deepcopy(param)
+    bparam[:K] = sum(mats.delta_i .* mats.I0)
+    baseline = optimal_network(bparam, deepcopy(graph); I0 = copy(mats.I0),
+                               solve_allocation = true, verbose = false)
+    results = optimal_network(param, graph; I0 = copy(mats.I0), Il = mats.Il, Iu = mats.Iu,
+                              verbose = false)
+    step("model build + solve compiled")
+
+    # 3. Results rendering (edge/node tables, map payload, CSV writer). These read
+    #    STATE, so only touch it while nothing else could observe it: no browser
+    #    has connected and no network is loaded. If a user beat us to it, skip —
+    #    the expensive compilation above is already done either way.
+    if MODEL_REF[] === nothing && STATE.nodes === nothing && STATE.results === nothing && !STATE.running
+        try
+            lock(STATE_LOCK) do
+                STATE.nodes, STATE.edges, STATE.geometries = nodes, edges, geoms
+                STATE.network_valid = true
+                STATE.results, STATE.baseline = results, baseline
+                STATE.run_info = Dict{Symbol, Any}(:elapsed => 0.0, :K_user => p.K)
+            end
+            edf, ndf = edge_table(), node_table()
+            # a temp path, not DOWNLOADS_DIR: warm-up output must never be
+            # downloadable as if it were a real run
+            tmp = tempname()
+            CSV.write(tmp, edf)
+            CSV.write(tmp, ndf)
+            rm(tmp; force = true)
+            rebuild_mapdata!()
+        finally
+            lock(STATE_LOCK) do
+                STATE.nodes, STATE.edges = nothing, nothing
+                STATE.nodes_filename, STATE.edges_filename = "", ""
+                STATE.geometries = EdgeGeometry[]
+                STATE.network_valid = false
+                STATE.results, STATE.baseline = nothing, nothing
+                STATE.run_info = Dict{Symbol, Any}()
+                STATE.warnings = String[]
+            end
+            rebuild_mapdata!()
+            console_clear!()
+        end
+        step("results rendering compiled")
+    else
+        step("results rendering skipped — client already active")
+    end
+
+    @info "[warmup] complete in $(round(Base.time() - t0, digits = 1)) s — app is hot"
+    return nothing
+end
+
+# ---------------------------------------------------------------------------
 # Server
 
 Genie.config.server_document_root = joinpath(APP_ROOT, "public")
@@ -614,5 +745,14 @@ if get(ENV, "OTN_NO_SERVER", "0") != "1" # gate for tests that drive the app in-
     port = something(tryparse(Int, get(ENV, "OTN_PORT", "8000")), 8000)
     host = get(ENV, "OTN_HOST", "127.0.0.1") # containers must bind 0.0.0.0
     @info "Optimal Transport Networks app → http://localhost:$port  (threads: $(Threads.nthreads()) default, $(Threads.nthreads(:interactive)) interactive)"
+    if get(ENV, "OTN_WARMUP", "1") != "0" # OTN_WARMUP=0 to boot cold (e.g. tests)
+        Threads.@spawn :default begin
+            try
+                warmup!(port)
+            catch e
+                @warn "[warmup] aborted — app still works, first use will be slow" exception = (e, catch_backtrace())
+            end
+        end
+    end
     Genie.up(port, host; async = false)
 end

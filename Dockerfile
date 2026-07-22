@@ -10,7 +10,7 @@ RUN apt-get update \
 # (ABORT_SOLVE support); bump the SHA when the package advances.
 RUN git clone https://github.com/OptimalTransportNetworks/OptimalTransportNetworks.jl \
       /OptimalTransportNetworks.jl \
- && git -C /OptimalTransportNetworks.jl checkout 993bd1c
+ && git -C /OptimalTransportNetworks.jl checkout 808899d
 
 WORKDIR /app
 
