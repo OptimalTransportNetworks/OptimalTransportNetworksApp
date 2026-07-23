@@ -6,6 +6,11 @@
 
 const ORIGINAL_STDOUT = stdout
 
+# NOTE: these files are `include`d into Main alongside `using GenieFramework`,
+# which exports (but never defines) `time`, `view`, `mark`, `summary`, `select`
+# and `metadata`. On Julia >= 1.12 that makes the bare name ambiguous with Base
+# and every use throws UndefVarError at runtime. Always qualify: `Base.time()`.
+
 const PROGRESS_RE = r"Iteration No\. (\d+) distance=([0-9.eE+-]+)"
 
 """
@@ -34,7 +39,32 @@ function start_solve!(p::NamedTuple; on_progress::Function, on_done::Function, o
     console_clear!()
     console_push!("[app] Building model: $(nrow(nodes)) nodes, $(nrow(edges)) edges, K = $(p.K) (internal 2K = $(2 * p.K)).")
 
-    Threads.@spawn :default _solve_task(nodes, edges, p, on_progress, on_done, on_error)
+    # Nobody waits on this task, so an exception escaping _solve_task would be
+    # swallowed: STATE.running would stay true forever and the UI would sit at
+    # "Solving..." with a dead console and an abort button that does nothing.
+    # Catch everything here and surface it through the normal error path.
+    Threads.@spawn :default begin
+        try
+            _solve_task(nodes, edges, p, on_progress, on_done, on_error)
+        catch e
+            msg = sprint(showerror, e)
+            # _solve_task may have died before its own finally restored stdout;
+            # leaving it pointed at a dead pipe would break every later solve.
+            try
+                redirect_stdout(ORIGINAL_STDOUT)
+            catch
+            end
+            lock(STATE_LOCK) do
+                STATE.running = false
+            end
+            try
+                Base.println(ORIGINAL_STDOUT, "[app] solve task died: ", msg)
+                console_push!("[app] Solve FAILED — internal error: $msg")
+                on_error(msg)
+            catch
+            end
+        end
+    end
     return true
 end
 
@@ -47,7 +77,7 @@ function abort_solve!()
 end
 
 function _solve_task(nodes, edges, p, on_progress, on_done, on_error)
-    t_start = time()
+    t_start = Base.time()
     pending = String[]
     plock = ReentrantLock()
 
@@ -109,7 +139,7 @@ function _solve_task(nodes, edges, p, on_progress, on_done, on_error)
     close(flusher)
     drain_console!(pending, plock, on_progress) # final drain
 
-    elapsed = time() - t_start
+    elapsed = Base.time() - t_start
     lock(STATE_LOCK) do
         STATE.running = false
     end

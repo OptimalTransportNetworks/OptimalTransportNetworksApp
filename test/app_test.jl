@@ -32,7 +32,8 @@ sleep(0.5)
 @check model.has_network[] "CEMAC network loaded via button handler"
 @check model.K[] > 0 "budget K prefilled ($(model.K[]))"
 @check occursin("196 nodes", model.net_summary[]) "CEMAC summary pushed ($(model.net_summary[]))"
-@check model.alpha[] == 0.7 && model.sigma[] == 3.8 && model.cross_good_congestion[] "CEMAC calibration applied on load"
+# cross_good_congestion stays FALSE by default — it is what keeps the solve fast
+@check model.alpha[] == 0.7 && model.sigma[] == 3.8 && !model.cross_good_congestion[] "CEMAC calibration applied on load"
 
 # --- Load example network (button) -------------------------------------------
 model.load_example[] = true
@@ -56,8 +57,8 @@ model.run[] = true
 sleep(1.0)
 @check model.running[] || !STATE.running "run handler started the solve"
 
-t0 = time()
-while (STATE.running || model.running[]) && time() - t0 < 600
+t0 = Base.time()
+while (STATE.running || model.running[]) && Base.time() - t0 < 600
     sleep(0.5)
 end
 sleep(1.0)
