@@ -55,7 +55,8 @@ function edge_table()
         N = size(Q, 3)
         total = zeros(nrow(df))
         for n in 1:N
-            qn = [sym_avg(view(Q, :, :, n), f, t) for (f, t) in zip(df.from, df.to)]
+            # Base.view: `view` is ambiguous in Main under `using GenieFramework` (see Solver.jl)
+            qn = [sym_avg(Base.view(Q, :, :, n), f, t) for (f, t) in zip(df.from, df.to)]
             N > 1 && (df[!, "Qjk_$n"] = qn)
             total .+= qn
         end

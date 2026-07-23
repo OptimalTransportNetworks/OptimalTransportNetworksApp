@@ -1,6 +1,10 @@
 .git
 misc/
 test/
+# The licensed HSL library is bind-mounted at /data/lib at runtime (see
+# docker-compose.yml), so copying it into the image only bloats it -- ~473 MB of
+# binaries that are never read from /app/hsl, plus the build-context upload.
+hsl/
 PLAN.md
 README.md
 Dockerfile

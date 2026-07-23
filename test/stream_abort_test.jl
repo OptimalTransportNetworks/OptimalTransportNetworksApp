@@ -48,13 +48,13 @@ println(stderr, "console totals over 30 s: ", totals)
 
 # --- abort: press the button again ----------------------------------------------
 @check STATE.running "still running before abort"
-t_abort = time()
+t_abort = Base.time()
 model.run[] = true # abort path
-t0 = time()
-while STATE.running && time() - t0 < 120
+t0 = Base.time()
+while STATE.running && Base.time() - t0 < 120
     sleep(0.5)
 end
-abort_latency = time() - t_abort
+abort_latency = Base.time() - t_abort
 @check !STATE.running "solver stopped after abort (latency $(round(abort_latency, digits=1)) s)"
 @check abort_latency < 60 "abort was responsive (< 60 s)"
 sleep(1.0)
